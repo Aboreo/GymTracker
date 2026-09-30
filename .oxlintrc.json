@@ -1,0 +1,14 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["react", "typescript", "oxc", "vitest"],
+  "categories": { "correctness": "error" },
+  "rules": {
+    "react/rules-of-hooks": "error",
+    "react/exhaustive-deps": "warn",
+    "typescript/no-explicit-any": "error",
+    "typescript/no-floating-promises": "error",
+    "no-unused-vars": "error",
+    "vitest/expect-expect": ["error", { "assertFunctionNames": ["expect", "assertSucceeds", "assertFails"] }]
+  },
+  "ignorePatterns": ["dist", "dev-dist"]
+}

@@ -1,0 +1,118 @@
+/* Design tokens. Every colour in the app comes from here. Light and dark follow the system. */
+
+:root {
+  color-scheme: light;
+
+  /* Type */
+  --font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, 'Segoe UI', sans-serif;
+  --fs-xs: 0.75rem;
+  --fs-sm: 0.875rem;
+  --fs-md: 1rem;
+  --fs-lg: 1.25rem;
+  --fs-xl: 1.75rem;
+  --fs-2xl: 2.25rem;
+
+  /* Space & shape */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --radius-sm: 8px;
+  --radius: 14px;
+  --radius-lg: 20px;
+  --tap: 44px;
+  --content-max: 1100px;
+  --sidebar-w: 200px;
+
+  /* Neutrals: warm grey */
+  --bg: #f5f3f0;
+  --surface: #ffffff;
+  --surface-2: #efece8;
+  --border: #e4e0da;
+  --text: #1d1b18;
+  --text-2: #57524b;
+  --text-muted: #6f6961;
+  --shadow: 0 1px 2px rgba(40, 30, 20, 0.05), 0 2px 8px rgba(40, 30, 20, 0.04);
+
+  /* Accent: calm orange (primary actions, selected states) */
+  --accent: #b9521a;
+  --accent-hover: #a24714;
+  --accent-soft: #fbe9dd;
+  --on-accent: #ffffff;
+  --focus-ring: 0 0 0 3px rgba(185, 82, 26, 0.35);
+
+  /* Meaning: green = on target/logged, amber = close/log later, red = off/regressing, grey = none */
+  --good: #267a44;
+  --good-soft: #e1f2e6;
+  --caution: #8f6600;
+  --caution-bar: #d9a520;
+  --caution-soft: #faf0d4;
+  --bad: #c43b36;
+  --bad-soft: #f9e1df;
+  --none: #a39d95;
+  --none-soft: #ebe8e4;
+
+  /* Charts: one fixed colour per metric (validated for colour-vision deficiency) */
+  --chart-e1rm: #2a78d6;
+  --chart-top-set: #1baf7a;
+  --chart-volume: #1baf7a;
+  --chart-bodyweight: #4a3aa7;
+  --chart-calories: #eb6834;
+  --chart-protein: #d55181;
+  --chart-workouts: #2a78d6;
+  --chart-target-band: rgba(46, 138, 79, 0.12);
+  --chart-grid: #e8e5df;
+  --chart-axis: #8a847c;
+
+  /* Focus mode: dark, high contrast in both themes */
+  --focus-bg: #0f0e0d;
+  --focus-surface: #1d1b19;
+  --focus-border: #34302c;
+  --focus-text: #ffffff;
+  --focus-text-2: #bdb6ad;
+  --focus-accent: #ff8a3d;
+  --focus-on-accent: #1a0d04;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --bg: #121110;
+    --surface: #1d1b19;
+    --surface-2: #272421;
+    --border: #34302c;
+    --text: #f3f0eb;
+    --text-2: #c9c2b8;
+    --text-muted: #a0988e;
+    --shadow: none;
+
+    --accent: #ff8a3d;
+    --accent-hover: #ff9d5c;
+    --accent-soft: #3a2415;
+    --on-accent: #1a0d04;
+    --focus-ring: 0 0 0 3px rgba(255, 138, 61, 0.45);
+
+    --good: #4cc27a;
+    --good-soft: #17301f;
+    --caution: #e6b73a;
+    --caution-bar: #e6b73a;
+    --caution-soft: #342a10;
+    --bad: #ef6b64;
+    --bad-soft: #3a1b19;
+    --none: #6f6860;
+    --none-soft: #2a2724;
+
+    --chart-e1rm: #3987e5;
+    --chart-top-set: #199e70;
+    --chart-volume: #199e70;
+    --chart-bodyweight: #9085e9;
+    --chart-calories: #d95926;
+    --chart-protein: #d55181;
+    --chart-workouts: #3987e5;
+    --chart-target-band: rgba(76, 194, 122, 0.14);
+    --chart-grid: #2c2926;
+    --chart-axis: #8a847c;
+  }
+}
