@@ -366,7 +366,8 @@ export function weeklyAdherence(sessions: WorkoutSession[], split: Split, from: 
   const out: WeekAdherence[] = [];
   for (let w = weekStart(from); w <= today; w = addDays(w, 7)) {
     const end = addDays(w, 6);
-    const completed = sessions.filter((s) => s.status === 'completed' && s.date >= w && s.date <= end).length;
+    // Custom workouts are extra training: they show up in strength and volume, never in plan adherence.
+    const completed = sessions.filter((s) => s.status === 'completed' && !s.custom && s.date >= w && s.date <= end).length;
     out.push({ week: w, planned, completed });
   }
   return out;

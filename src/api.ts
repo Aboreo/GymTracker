@@ -21,7 +21,7 @@ import {
   type Unsubscribe,
 } from 'firebase/firestore';
 import { db } from './firebase';
-import type { DayEntry, ExportFile, ISODate, Settings, WorkoutSession } from './shared/types';
+import type { DayEntry, ExportFile, ISODate, SavedFood, Settings, WorkoutSession } from './shared/types';
 
 // ---------------------------------------------------------------------------------------------
 // Tiny observable store helper (used by the sync indicator and the dev op counter)
@@ -109,6 +109,7 @@ function track(p: Promise<unknown>, writes = 1): void {
 // Paths
 
 const settingsRef = (uid: string) => doc(db, 'users', uid, 'settings', 'main');
+const foodsRef = (uid: string) => doc(db, 'users', uid, 'settings', 'foods');
 const daysCol = (uid: string) => collection(db, 'users', uid, 'days');
 const sessionsCol = (uid: string) => collection(db, 'users', uid, 'sessions');
 const dayRef = (uid: string, date: ISODate) => doc(daysCol(uid), date);
@@ -162,6 +163,20 @@ window.addEventListener('pagehide', flushSettings);
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') flushSettings();
 });
+
+// ---------------------------------------------------------------------------------------------
+// Saved items: every item in ONE document (1 read to load, 1 write per save)
+
+/** Loads once (from the local cache when offline). Throws if neither server nor cache has it. */
+export async function loadFoods(uid: string): Promise<SavedFood[]> {
+  const snap = await getDoc(foodsRef(uid));
+  if (!snap.metadata.fromCache) countReads(1);
+  return (snap.data()?.items as SavedFood[] | undefined) ?? [];
+}
+
+export function saveFoods(uid: string, items: SavedFood[]): void {
+  track(setDoc(foodsRef(uid), { items }));
+}
 
 // ---------------------------------------------------------------------------------------------
 // Days and sessions: live listeners on a bounded window, plus a one-off load of older data
@@ -256,10 +271,11 @@ export function deleteMany(uid: string, dayIds: ISODate[], sessionIds: string[])
 
 /** Reads everything once (including data older than the live window) for a backup. */
 export async function exportAll(uid: string): Promise<ExportFile> {
-  const [settingsSnap, daysSnap, sessionsSnap] = await Promise.all([
+  const [settingsSnap, daysSnap, sessionsSnap, foods] = await Promise.all([
     getDoc(settingsRef(uid)),
     getDocs(daysCol(uid)),
     getDocs(sessionsCol(uid)),
+    loadFoods(uid),
   ]);
   countReads(1);
   countSnapshot(daysSnap);
@@ -271,10 +287,14 @@ export async function exportAll(uid: string): Promise<ExportFile> {
     settings: settingsSnap.data() as Settings,
     days: daysSnap.docs.map((d) => d.data() as DayEntry),
     sessions: sessionsSnap.docs.map((d) => d.data() as WorkoutSession),
+    foods,
   };
 }
 
-/** Restores a backup. Documents with the same id are overwritten; others are left alone. */
+/**
+ * Restores a backup. Documents with the same id are overwritten; others are left alone.
+ * Saved items (file.foods) are restored by the caller through AppData, so its cache stays current.
+ */
 export async function importAll(uid: string, file: ExportFile): Promise<void> {
   saveSettings(uid, file.settings);
   await writeMany(uid, file.days, file.sessions);

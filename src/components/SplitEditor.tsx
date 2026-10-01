@@ -1,12 +1,13 @@
 import { useMemo, useState, type DragEvent } from 'react';
+import { defaultRestFor, restTypeOf } from '../logic/settings';
 import { expandBlocks, inlineTarget } from '../logic/workoutPlayer';
-import { MUSCLE_GROUPS, WEEKDAYS, type Block, type Exercise, type Plan, type Target, type WorkBlock } from '../shared/types';
+import { MUSCLE_GROUPS, REST_TYPES, WEEKDAYS, type Block, type Exercise, type Plan, type RestType, type Target, type WorkBlock } from '../shared/types';
 import { useAppData } from '../state/AppData';
 import { Icon } from './Icon';
 import { Confirm, NumberInput } from './ui';
 
 const DAY_LABEL: Record<(typeof WEEKDAYS)[number], string> = {
-  mon: 'Monday', tue: 'Tuesday', wed: 'Wednesday', thu: 'Thursday', fri: 'Friday', sat: 'Saturday', sun: 'Sunday',
+  mon: 'Mon', tue: 'Tue', wed: 'Wed', thu: 'Thu', fri: 'Fri', sat: 'Sat', sun: 'Sun',
 };
 
 export const newId = () => crypto.randomUUID().slice(0, 8);
@@ -20,7 +21,12 @@ function usePlanEditor() {
       fn(draft);
       return { ...s, plan: draft };
     });
-  return { plan: settings.plan, edit, defaultRest: settings.timer.defaultRestSec };
+  // New blocks start with the default rest for the exercise's rest type (Settings → Rest timings).
+  const restFor = (exerciseId: string) => {
+    const ex = settings.plan.exercises.find((e) => e.id === exerciseId);
+    return ex ? defaultRestFor(ex, settings) : settings.timer.restSec.compound;
+  };
+  return { plan: settings.plan, edit, restFor };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -28,13 +34,12 @@ function usePlanEditor() {
 export function WeeklySplitEditor() {
   const { plan, edit } = usePlanEditor();
   return (
-    <div className="list">
+    <div className="split-grid">
       {WEEKDAYS.map((d) => (
-        <label key={d} className="list-item">
-          <span className="grow">{DAY_LABEL[d]}</span>
+        <label key={d} className="split-day">
+          <span className="label">{DAY_LABEL[d]}</span>
           <select
             className="input"
-            style={{ width: 'auto', minWidth: 150 }}
             value={plan.split[d] ?? ''}
             onChange={(e) => edit((p) => void (p.split[d] = e.target.value || null))}
           >
@@ -54,13 +59,14 @@ export function WeeklySplitEditor() {
 // ---------------------------------------------------------------------------------------------
 
 export function WorkoutsEditor() {
-  const { plan, edit, defaultRest } = usePlanEditor();
+  const { plan, edit, restFor } = usePlanEditor();
   const { sessions } = useAppData();
   const [selectedId, setSelectedId] = useState<string | null>(plan.workouts[0]?.id ?? null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const wIndex = plan.workouts.findIndex((w) => w.id === selectedId);
   const workout = wIndex >= 0 ? plan.workouts[wIndex] : null;
   const inProgress = workout && sessions.some((s) => s.status === 'in_progress' && s.workoutId === workout.id);
+  const scheduledDays = (id: string) => WEEKDAYS.filter((d) => plan.split[d] === id).map((d) => DAY_LABEL[d]);
 
   const addWorkout = () => {
     const id = newId();
@@ -92,11 +98,13 @@ export function WorkoutsEditor() {
   return (
     <div className="stack">
       <div className="row wrap">
-        {plan.workouts.map((w) => (
-          <button key={w.id} className={`btn sm ${w.id === selectedId ? 'primary' : ''}`} onClick={() => setSelectedId(w.id)}>
-            {w.name}
-          </button>
-        ))}
+        {[...plan.workouts]
+          .sort((a, b) => Number(scheduledDays(b.id).length > 0) - Number(scheduledDays(a.id).length > 0))
+          .map((w) => (
+            <button key={w.id} className={`btn sm ${w.id === selectedId ? 'primary' : ''}`} onClick={() => setSelectedId(w.id)}>
+              {w.name}
+            </button>
+          ))}
         <button className="btn sm ghost" onClick={addWorkout}>
           <Icon name="plus" size={18} /> New
         </button>
@@ -125,10 +133,13 @@ export function WorkoutsEditor() {
             </button>
           </div>
 
+          <p className="small muted">
+            {scheduledDays(workout.id).length ? `In the weekly schedule: ${scheduledDays(workout.id).join(', ')}` : 'Not in the weekly schedule.'}
+          </p>
           <BlockList
             blocks={workout.blocks}
             exercises={plan.exercises}
-            defaultRest={defaultRest}
+            restFor={restFor}
             onChange={(fn) => edit((p) => fn(p.workouts[wIndex].blocks))}
           />
 
@@ -156,12 +167,12 @@ export function WorkoutsEditor() {
 function BlockList({
   blocks,
   exercises,
-  defaultRest,
+  restFor,
   onChange,
 }: {
   blocks: Block[];
   exercises: Exercise[];
-  defaultRest: number;
+  restFor: (exerciseId: string) => number;
   onChange: (fn: (blocks: Block[]) => void) => void;
 }) {
   const [dragFrom, setDragFrom] = useState<number | null>(null);
@@ -266,7 +277,7 @@ function BlockList({
                 kind: 'work',
                 exercises: [{ exerciseId: firstExercise, target: { kind: 'range', min: 8, max: 12 } }],
                 rounds: 3,
-                restSec: defaultRest,
+                restSec: restFor(firstExercise),
               }),
             )
           }
@@ -437,6 +448,20 @@ export function ExerciseLibrary() {
               {MUSCLE_GROUPS.map((g) => (
                 <option key={g} value={g}>
                   {g}
+                </option>
+              ))}
+            </select>
+            <select
+              className="input"
+              style={{ width: 'auto' }}
+              value={restTypeOf(ex)}
+              aria-label="Rest type"
+              title="Picks the default rest (Settings → Rest timings)"
+              onChange={(e) => edit((p) => void (p.exercises[i].restType = e.target.value as RestType))}
+            >
+              {REST_TYPES.map((t) => (
+                <option key={t} value={t}>
+                  {t}
                 </option>
               ))}
             </select>

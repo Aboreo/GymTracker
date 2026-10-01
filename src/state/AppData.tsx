@@ -4,8 +4,10 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import * as api from '../api';
 import { defaultSettings } from '../data/defaultPlan';
-import { addDays, todayISO } from '../logic/dates';
-import type { DayEntry, ISODate, Settings, WorkoutSession } from '../shared/types';
+import { addDays, isISODate, todayISO } from '../logic/dates';
+import { normalizeSettings } from '../logic/settings';
+import { navigate, parseHash, pathWith, useLocation } from '../router';
+import type { DayEntry, ISODate, SavedFood, Settings, WorkoutSession } from '../shared/types';
 
 export const LIVE_WINDOW_DAYS = 365;
 
@@ -25,6 +27,10 @@ interface AppData {
   saveDay: (d: DayEntry) => void;
   saveSession: (s: WorkoutSession) => void;
   deleteSession: (id: string) => void;
+  /** Saved items: null until loaded, 'error' if they couldn't be loaded (saving is then disabled). */
+  foods: SavedFood[] | null | 'error';
+  loadFoods: () => void;
+  saveFoods: (items: SavedFood[]) => void;
 }
 
 const Ctx = createContext<AppData | null>(null);
@@ -33,6 +39,24 @@ export function useAppData(): AppData {
   const v = useContext(Ctx);
   if (!v) throw new Error('useAppData outside AppDataProvider');
   return v;
+}
+
+/**
+ * The selected date, kept in step with the URL: a ?date= param (deep link, Back) selects that
+ * date, and changing the date on a screen whose URL carries one updates it in place.
+ */
+export function useSelectedDate(): [ISODate, (d: ISODate) => void] {
+  const { selectedDate, setSelectedDate } = useAppData();
+  const loc = useLocation();
+  const urlDate = loc.params.get('date');
+  useEffect(() => {
+    if (isISODate(urlDate)) setSelectedDate(urlDate);
+  }, [urlDate, setSelectedDate]);
+  const set = (d: ISODate) => {
+    setSelectedDate(d);
+    if (loc.params.has('date')) navigate(pathWith(loc, { params: { date: d } }), { replace: true });
+  };
+  return [selectedDate, set];
 }
 
 export function emptyDay(date: ISODate): DayEntry {
@@ -46,13 +70,24 @@ export function AppDataProvider({ uid, children, loading }: { uid: string; child
   const [olderDays, setOlderDays] = useState<DayEntry[]>([]);
   const [olderSessions, setOlderSessions] = useState<WorkoutSession[]>([]);
   const [allTimeLoaded, setAllTimeLoaded] = useState(false);
-  const [selectedDate, setSelectedDate] = useState<ISODate>(() => todayISO());
+  const [selectedDate, setSelectedDate] = useState<ISODate>(() => {
+    const d = parseHash(window.location.hash).params.get('date');
+    return isISODate(d) ? d : todayISO();
+  });
   const [error, setError] = useState<string | null>(null);
   // Our own latest writes, shown immediately. Firestore's listener echoes them back a moment
   // later; until then, a second quick edit must build on the first, not on the stale snapshot.
   const [localDays, setLocalDays] = useState<Map<ISODate, DayEntry>>(() => new Map());
   const [localSessions, setLocalSessions] = useState<Map<string, WorkoutSession | null>>(() => new Map());
   const windowStart = useMemo(() => addDays(todayISO(), -LIVE_WINDOW_DAYS), []);
+  const [foods, setFoods] = useState<SavedFood[] | null | 'error'>(null);
+  const [foodsRequested, setFoodsRequested] = useState(false);
+
+  // Saved items are only loaded when a screen needs them, and only once per app launch.
+  useEffect(() => {
+    if (!foodsRequested) return;
+    api.loadFoods(uid).then(setFoods, () => setFoods('error'));
+  }, [uid, foodsRequested]);
 
   useEffect(() => {
     const onErr = (e: Error) => setError(e.message);
@@ -61,7 +96,7 @@ export function AppDataProvider({ uid, children, loading }: { uid: string; child
         uid,
         (s) => {
           if (api.hasQueuedSettings()) return; // local edits win until they're written
-          const next = s ?? defaultSettings();
+          const next = s ? normalizeSettings(s) : defaultSettings();
           if (!s) api.saveSettings(uid, next);
           setSettings(next);
         },
@@ -135,9 +170,15 @@ export function AppDataProvider({ uid, children, loading }: { uid: string; child
               setLocalSessions((m) => new Map(m).set(id, null));
               api.deleteSession(uid, id);
             },
+            foods,
+            loadFoods: () => setFoodsRequested(true),
+            saveFoods: (items) => {
+              setFoods(items);
+              api.saveFoods(uid, items);
+            },
           }
         : null,
-    [uid, settings, liveDays, liveSessions, days, sessions, selectedDate, allTimeLoaded, loadAllTime],
+    [uid, settings, liveDays, liveSessions, days, sessions, selectedDate, allTimeLoaded, loadAllTime, foods],
   );
 
   if (error && !value) {

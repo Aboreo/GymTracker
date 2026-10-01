@@ -33,17 +33,24 @@ function tone(freq: number, ms: number, when = 0, gain = 0.25): void {
   osc.stop(t + ms / 1000 + 0.02);
 }
 
+export interface Cues {
+  sound: boolean;
+  vibration: boolean;
+}
+
 /** Short tick for the last 3 seconds. */
-export function countdownBeep(): void {
-  tone(880, 120);
-  vibrate(40);
+export function countdownBeep(c: Cues): void {
+  if (c.sound) tone(880, 120);
+  if (c.vibration) vibrate(40);
 }
 
 /** Distinct rising chime when rest is over. */
-export function finishChime(): void {
-  tone(660, 160, 0, 0.3);
-  tone(990, 260, 0.17, 0.3);
-  vibrate([120, 60, 120]);
+export function finishChime(c: Cues): void {
+  if (c.sound) {
+    tone(660, 160, 0, 0.3);
+    tone(990, 260, 0.17, 0.3);
+  }
+  if (c.vibration) vibrate([120, 60, 120]);
 }
 
 // ---- Vibration (not supported on iOS Safari: silently skipped)

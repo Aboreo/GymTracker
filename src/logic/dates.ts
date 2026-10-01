@@ -37,10 +37,24 @@ export function weekStart(s: ISODate): ISODate {
   return addDays(s, -((d.getDay() + 6) % 7));
 }
 
-export function formatLongDate(s: ISODate): string {
-  return parseISODate(s).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' });
-}
-
 export function formatShortDate(s: ISODate): string {
   return parseISODate(s).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+export function isISODate(s: string | null): s is ISODate {
+  return s !== null && /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(parseISODate(s).getTime());
+}
+
+/** "Today", "Yesterday", "Tomorrow", otherwise e.g. "Mon, Oct 5". */
+export function relativeDayLabel(s: ISODate, today: ISODate = todayISO()): string {
+  const diff = daysBetween(today, s);
+  if (diff === 0) return 'Today';
+  if (diff === -1) return 'Yesterday';
+  if (diff === 1) return 'Tomorrow';
+  return parseISODate(s).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+}
+
+/** e.g. "Monday, October 5, 2026". */
+export function formatFullDate(s: ISODate): string {
+  return parseISODate(s).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
 }

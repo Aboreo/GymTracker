@@ -76,8 +76,9 @@
   --focus-on-accent: #1a0d04;
 }
 
+/* Dark: follows the system unless a theme is picked in Settings (data-theme on <html>). */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme='light']) {
     color-scheme: dark;
     --bg: #121110;
     --surface: #1d1b19;
@@ -115,4 +116,43 @@
     --chart-grid: #2c2926;
     --chart-axis: #8a847c;
   }
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #121110;
+  --surface: #1d1b19;
+  --surface-2: #272421;
+  --border: #34302c;
+  --text: #f3f0eb;
+  --text-2: #c9c2b8;
+  --text-muted: #a0988e;
+  --shadow: none;
+
+  --accent: #ff8a3d;
+  --accent-hover: #ff9d5c;
+  --accent-soft: #3a2415;
+  --on-accent: #1a0d04;
+  --focus-ring: 0 0 0 3px rgba(255, 138, 61, 0.45);
+
+  --good: #4cc27a;
+  --good-soft: #17301f;
+  --caution: #e6b73a;
+  --caution-bar: #e6b73a;
+  --caution-soft: #342a10;
+  --bad: #ef6b64;
+  --bad-soft: #3a1b19;
+  --none: #6f6860;
+  --none-soft: #2a2724;
+
+  --chart-e1rm: #3987e5;
+  --chart-top-set: #199e70;
+  --chart-volume: #199e70;
+  --chart-bodyweight: #9085e9;
+  --chart-calories: #d95926;
+  --chart-protein: #d55181;
+  --chart-workouts: #3987e5;
+  --chart-target-band: rgba(76, 194, 122, 0.14);
+  --chart-grid: #2c2926;
+  --chart-axis: #8a847c;
 }

@@ -4,7 +4,7 @@
 
 import { addDays, weekdayOf } from '../logic/dates';
 import { carbsFromRemaining } from '../logic/analytics';
-import { convertWeight } from '../logic/units';
+import { convertWeight, round1 } from '../logic/units';
 import { createSession } from '../logic/workoutPlayer';
 import type { DayEntry, ISODate, Settings, WorkoutSession } from '../shared/types';
 
@@ -37,7 +37,7 @@ export function generateSampleData(
   const rand = mulberry32(42);
   const noise = (amp: number) => (rand() * 2 - 1) * amp;
   const u = settings.units;
-  const w = (lb: number) => convertWeight(lb, 'lb', u);
+  const w = (lb: number) => round1(convertWeight(lb, 'lb', u));
   const step = settings.timer.weightStep;
   const { nutrition, plan } = settings;
 

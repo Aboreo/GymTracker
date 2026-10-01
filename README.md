@@ -87,23 +87,44 @@ Safari → open the URL → **File → Add to Dock** (or just use any browser). 
 
 ## 6. Using the app
 
-### Editing your split (Plan & Settings)
+### Navigation
 
-- **Weekly split:** pick a workout (or Rest) for each weekday.
+- Tabs (phone) / sidebar (Mac): **Today, Workout, Log, Dashboard, Plan**, plus **Settings**. On phone, Settings is the **gear** in the top-right of every screen (six tabs would be cramped); on Mac it's a sidebar item.
+- Every screen is a real URL, e.g. `#/log/weight?date=2026-10-05`, `#/plan/library`, `#/settings/data`, so deep links, reloads and the browser Back button work.
+- **Today** heading shows the selected date: *Today / Yesterday / Tomorrow* or e.g. *Mon, Oct 5*, with the full date underneath. The ‹ date › navigator has fixed-width parts, so stepping through days never moves anything; tap the date to pick one. Tapping the Today tab while on Today jumps back to today's date.
+- Today's widgets open the exact place for the selected date: **Diet → Log → Diet**, **Weight → Log → Weight**, **Workout → Workout**. Those screens then show **‹ Today** (top left) to go straight back, keeping the date. In the installed iPhone app, a swipe in from the left edge does the same.
+
+### Editing your plan (Plan)
+
+Plan has three sections: **Workouts**, **Exercises** and **Nutrition**.
+
+- **Weekly schedule** (top of Workouts): pick a workout (or Rest) for each weekday. Workouts used in the schedule are listed first, and each shows which days it runs.
 - **Workouts:** create, rename, duplicate, delete. Each workout is an ordered list of **blocks**:
   - **Exercise block** — one or more exercises, repeated for N **rounds**, with a rest after each round. One exercise = normal sets; tap **Make superset** to add a second (or third) exercise; **Split out** turns it back into its own block.
   - **Rest block** — a standalone rest (e.g. to change stations).
 - **Targets:** fixed reps, a rep range, or to failure (optionally "aim for" a ceiling).
 - **Reorder** blocks with the drag handle (Mac) or the ↑/↓ buttons (phone).
-- **Exercise library:** rename, set muscle group, mark **Assisted** (weight = assistance, lower is better). Renaming keeps history — charts follow an exercise's id, not its name.
+- **Exercise library** (Exercises): rename, set muscle group, **rest type** (compound / isolation / abs, which picks the default rest), mark **Assisted** (weight = assistance, lower is better). Renaming keeps history — charts follow an exercise's id, not its name.
+- **Nutrition:** maintenance and daily calorie target and range, protein and fat ranges (carbs fill the rest), the target weekly weight gain and the calorie-adjustment step.
 - The orange **preview** shows exactly what focus mode will run, e.g. `Curls × 10 → Pull-ups to failure → Rest 30s → Curls × 10 → Pull-ups to failure`.
 - Changes apply to **future** sessions only. Each session stores a snapshot of names and targets, so past workouts never change. You'll see a warning if you edit a workout that has a session in progress.
 
-Seeded defaults you may want to adjust: rest is 90s for compound lifts and 60s for isolation/abs, and "Abs 2–3 sets" was seeded as 3 × 10–15.
+Seeded defaults you may want to adjust: rest is 90s for compound lifts and 60s for isolation/abs (Settings → Rest), and "Abs 2–3 sets" was seeded as 3 × 10–15.
 
 ### Workout screen
 
 Shows the workout for the selected date: exercises, total sets, estimated time and the block list exactly as it will run. Tap any set to log or edit it (this is also how you back-fill a past day — use **Log manually instead**). You can pick a different workout for a day; it applies to that day only. **Finish workout** asks you to fill in or discard any sets still pending or marked "log later" (discarded sets are removed and never count in stats). Completed sessions can be reopened or deleted.
+
+### Custom workouts
+
+**Custom workout** on the Workout screen starts an empty, renameable session for any day — including rest days. If the day's planned workout hasn't had a set logged yet, the custom workout replaces it; once sets are logged, it can't be swapped.
+
+- **Add exercise:** search your library, or **Create new exercise** (name, muscle group, assisted) — it's saved to the library.
+- **Log set:** weight, reps, optional RPE, pre-filled from your previous set today or the same set last time. Tap a set to edit or delete it. Reorder (↑/↓) or remove exercises at any time.
+- **Rest:** *Start rest timer* after a set uses that exercise's default rest (Settings → Rest), or turn on *start the rest timer automatically* there. Same clock-based timer as focus mode.
+- Saved after every change, so closing the app never loses anything; reopening the day resumes it.
+- **Finish workout** completes it and offers **Save as workout template** (one block per exercise, rounds = sets done, target = the rep range you hit).
+- Custom workouts use the same session format, so they count in strength, volume and insights. They are **not** counted in plan adherence (they're extra training, not a planned day). Focus mode is for planned workouts only.
 
 ### Focus mode and the rest timer
 
@@ -132,8 +153,30 @@ iOS limitations:
 
 ### Diet and weight (Log)
 
-- Diet: calories, protein, fat and carbs for the day, saved as you type. Carbs **auto-fill** from remaining calories (kcal − 4·protein − 9·fat) ÷ 4, or type your own (tap *Auto* to go back). Bars are green = on target, amber = close, red = off.
-- Weight: morning weigh-in, recent history and the **7-day rolling average**, weekly change, and the calorie suggestion.
+**Diet** — log what you ate, no setup needed:
+
+- **Item eaten:** name (optional), calories / protein / fat / carbs **per serving**, and **servings** (decimals like 1.5 or 0.25; chips 0.5× 1× 1.5× 2× and −/+). Carbs **auto-fill** from remaining calories (kcal − 4·protein − 9·fat) ÷ 4, or type your own (tap *Auto* to go back). A live preview shows exactly what will be added (per-serving × servings). Meal defaults by time of day.
+- **Save for next time** (off by default) remembers the item; it then appears as a suggestion — **Recent** first (from what you've eaten lately), then name matches — and picking one fills everything in.
+- **Quick add:** type a total (calories and/or macros), no per-serving math.
+- If the macros don't roughly match the calories (4/4/9 kcal per g, ±15%) you get a gentle warning, e.g. *"These macros add up to ~2,700 kcal, but you entered 400"* — it never blocks saving.
+- Entries are listed by meal; tap one to edit (any value, servings, meal) or delete. The day's totals and bars update immediately (green = on target, amber = close, red = off).
+- **Saved items** are managed in Settings → Preferences (rename, ★ favourite, delete). Up to 300; when full, the least recently saved non-starred ones are dropped.
+- Days logged before this existed (daily totals only) show as one **"Manual total"** entry — nothing is lost, and adding items adds to it.
+
+**Weight:** morning weigh-in, recent history and the **7-day rolling average**, weekly change, and the calorie suggestion. **ⓘ How is this calculated?** explains each rule with your current numbers.
+
+**No AI is involved anywhere.** The weight report and dashboard insights are fixed rules (section 9), computed on your device from your logged data.
+
+### Settings
+
+| Section | What's there |
+| --- | --- |
+| **Account** | Signed-in email, change password, sign out |
+| **Rest** | Default rest for compound / isolation / abs, auto-advance vs wait-for-tap, sound, vibration, auto-start rest in custom workouts |
+| **Preferences** | Units (lb/kg, with conversion), weight step, theme (system/light/dark, per device), saved items |
+| **Data** | JSON backup and restore, CSV exports, last-backup date, load/remove sample data |
+
+Where things moved from the old *Plan & Settings* screen: weekly split, workouts, exercise library and nutrition targets → **Plan**; units, weight step → **Settings → Preferences**; default rest, auto-advance, sound → **Settings → Rest**; backup, CSV, sample data → **Settings → Data**; sign out → **Settings → Account**. The old single "default rest" became the compound default.
 
 ---
 
@@ -141,7 +184,7 @@ iOS limitations:
 
 Firebase's free plan has **no automatic backups**.
 
-- **Export:** Plan & Settings → Backup → **Export backup (JSON)**. On iPhone this opens the share sheet — choose *Save to Files* (iCloud Drive). The Today screen reminds you if it's been more than 30 days.
+- **Export:** Settings → Data → **Export backup (JSON)** (includes saved items). On iPhone this opens the share sheet — choose *Save to Files* (iCloud Drive). The Today screen reminds you if it's been more than 30 days.
 - **Restore:** **Restore from backup…** → pick the JSON file → confirm. It replaces your settings/plan and any days/workouts with the same dates/ids; other data is left alone.
 - **CSV:** separate exports for workouts (one row per set), nutrition and weight, for spreadsheets.
 
@@ -157,10 +200,10 @@ Spark limits: **50,000 reads/day, 20,000 writes/day, 1 GiB stored**.
 
 | What | Cost |
 | --- | --- |
-| Data layout | 1 settings doc (plan + preferences), 1 doc per **day** (nutrition + weight), 1 doc per **workout** (all its sets). A year ≈ 365 + ~200 small docs, well under 5 MB. |
+| Data layout | 1 settings doc (plan + preferences), 1 doc for **all saved items**, 1 doc per **day** (meal entries + totals + weight), 1 doc per **workout** (all its sets). A year ≈ 365 + ~200 small docs, well under 5 MB. |
 | Opening the app | Live listeners on the **last 12 months** of days and sessions. The first load reads each doc once (~600 reads/year of data); after that, Firestore's local cache means only **changed** docs are re-read. |
 | Screens and charts | All analytics run on the device from memory. Changing a chart filter or switching screens costs **0 reads**. "All time" loads older data **once** on demand. |
-| Logging | ~1 write per set during a workout (so a closed app never loses progress) ≈ 20–30 writes per workout; 1–4 writes per day for diet/weight. Plan edits are batched (written 0.6s after you stop typing). |
+| Logging | ~1 write per set during a workout (so a closed app never loses progress) ≈ 20–30 writes per workout; 1 write per diet entry added/edited (+1 if you save the item); saved items load with 1 read, only when needed. Plan edits are batched (written 0.6s after you stop typing). |
 | Offline | Writes queue locally and sync when signal returns, at no extra cost. |
 
 Realistic use is on the order of **100–1,000 reads and ~50 writes per day** — around 1% of the free quota. The dev-only R · W counter lets you check.
@@ -182,9 +225,9 @@ All analytics use **logged sets only**. Pending and "log later" sets are never c
 - **Protein:** % of logged days at or above the protein minimum. "Better progress on protein weeks" compares the average weekly e1RM change (each exercise vs its previous week) in weeks where protein was hit on ≥ 70% of days vs other weeks (needs ≥ 2 weeks of each).
 - **Lower-volume muscle groups:** sets per group over the last 4 weeks below half the median group.
 - **Calories vs lifting:** Pearson correlation between weekly average calories and the weekly e1RM change; |r| ≥ 0.5 "fairly clear", ≥ 0.3 "weak", otherwise "no clear link".
-- **Adherence:** completed workouts per week vs workout days in your current split; the streak counts consecutive weeks that met the plan (the current week doesn't break it while in progress).
+- **Adherence:** completed **planned** workouts per week (custom workouts excluded) vs workout days in your current split; the streak counts consecutive weeks that met the plan (the current week doesn't break it while in progress).
 
-Insights need **3+ weeks** of data and are worded cautiously — they're patterns, not proof.
+Insights need **3+ weeks** of data and are worded cautiously — they're patterns, not proof. The same rules are explained in the app under **How are these insights calculated?** on the dashboard. Nothing is sent anywhere and no AI is used.
 
 ---
 
@@ -196,9 +239,12 @@ src/
   firebase.ts            Firebase init, persistent multi-tab cache, emulator hookup
   api.ts                 the only module that touches Firestore (+ sync status, dev op counter)
   state/AppData.tsx      in-memory cache of the signed-in user's data
-  logic/                 pure, tested logic: workoutPlayer, restTimer, progression, analytics, units, dates, backup
+  router.ts              hash router: #/route/sub?date=…&from=today
+  logic/                 pure, tested logic: workoutPlayer, customWorkout, diet, settings (defaults for older docs),
+                         restTimer, progression, analytics, units, dates, backup
   data/                  defaultPlan (seed), sampleData
   lib/device.ts          sound, vibration, wake lock
+  lib/theme.ts           per-device theme (system/light/dark)
   components/, pages/    UI
   styles/tokens.css      design tokens (light/dark)
 tests/rules.test.ts      security-rules tests

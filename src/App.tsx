@@ -1,13 +1,14 @@
 import { onAuthStateChanged, type User } from 'firebase/auth';
 import { useEffect, useState } from 'react';
-import { Nav } from './components/Nav';
-import { DevCounter, SyncIndicator } from './components/SyncIndicator';
+import { MobileHeader, Nav } from './components/Nav';
+import { DevCounter } from './components/SyncIndicator';
 import { auth } from './firebase';
 import { Dashboard } from './pages/Dashboard';
 import { FocusMode } from './pages/FocusMode';
 import { Log } from './pages/Log';
 import { Login } from './pages/Login';
-import { PlanSettings } from './pages/PlanSettings';
+import { Plan } from './pages/Plan';
+import { Settings } from './pages/Settings';
 import { Today } from './pages/Today';
 import { Workout } from './pages/Workout';
 import { useRoute } from './router';
@@ -15,7 +16,7 @@ import { AppDataProvider } from './state/AppData';
 
 function Splash() {
   return (
-    <div className="main" style={{ display: 'grid', placeItems: 'center', minHeight: '100dvh' }}>
+    <div className="center-screen">
       <p className="muted">Loading…</p>
     </div>
   );
@@ -41,14 +42,13 @@ function Shell() {
     <div className="app">
       <Nav route={route} />
       <main className="main">
-        <div className="mobile-sync">
-          <SyncIndicator />
-        </div>
+        <MobileHeader route={route} />
         {route === 'today' && <Today />}
         {route === 'workout' && <Workout />}
         {route === 'log' && <Log />}
         {route === 'dashboard' && <Dashboard />}
-        {route === 'plan' && <PlanSettings />}
+        {route === 'plan' && <Plan />}
+        {route === 'settings' && <Settings />}
       </main>
       {import.meta.env.DEV && <DevCounter />}
     </div>

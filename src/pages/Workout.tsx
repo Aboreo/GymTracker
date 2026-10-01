@@ -1,9 +1,11 @@
 import { useMemo, useState } from 'react';
 import { Icon } from '../components/Icon';
+import { CustomWorkoutView } from '../components/CustomWorkout';
 import { StepSheet } from '../components/StepSheet';
-import { Confirm, DateNav, Empty, Sheet } from '../components/ui';
+import { BackToToday, Confirm, DateNav, Empty, Sheet } from '../components/ui';
 import { weekdayOf } from '../logic/dates';
 import { unlockAudio } from '../lib/device';
+import { createCustomSession, isCustom } from '../logic/customWorkout';
 import { formatSet } from '../logic/progression';
 import {
   counts,
@@ -18,19 +20,21 @@ import {
   setStepResult,
   unresolvedSteps,
 } from '../logic/workoutPlayer';
-import { navigate } from '../router';
+import { navigate, pathWith, useLocation } from '../router';
 import type { ExerciseStep, Step, WorkoutSession } from '../shared/types';
-import { useAppData } from '../state/AppData';
+import { useAppData, useSelectedDate } from '../state/AppData';
 
 export function Workout() {
   const app = useAppData();
-  const { settings, selectedDate, setSelectedDate } = app;
+  const { settings } = app;
+  const [selectedDate, setSelectedDate] = useSelectedDate();
+  const loc = useLocation();
   const plan = settings.plan;
   const session = app.sessions.find((s) => s.date === selectedDate) ?? null;
   const scheduledId = plan.split[weekdayOf(selectedDate)];
   const [overrideId, setOverrideId] = useState<string | null>(null);
   const [editing, setEditing] = useState<number | null>(null);
-  const [reviewing, setReviewing] = useState(() => window.location.hash.includes('review'));
+  const [reviewing, setReviewing] = useState(() => loc.params.has('review'));
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   const templateId = overrideId ?? session?.workoutId ?? scheduledId;
@@ -56,12 +60,19 @@ export function Workout() {
     return s;
   }
 
+  /** Starts an empty custom workout; an unstarted session for the day is replaced (same id). */
+  function startCustom() {
+    unlockAudio();
+    save(createCustomSession(selectedDate, Date.now(), session?.id));
+    setOverrideId(null);
+  }
+
   function startFocus() {
     unlockAudio(); // must happen inside this tap for iOS
     const s = ensureSession();
     if (!s) return;
     if (s.status === 'completed') save(reopen(s, Date.now()));
-    navigate('focus');
+    navigate('/focus');
   }
 
   const editingStep = session && editing !== null ? (session.steps[editing] as ExerciseStep | undefined) : undefined;
@@ -69,10 +80,15 @@ export function Workout() {
   return (
     <div className="page">
       <div className="page-header">
+        <BackToToday />
         <h1>Workout</h1>
         <DateNav date={selectedDate} onChange={(d) => { setSelectedDate(d); setOverrideId(null); }} />
       </div>
 
+      {session && isCustom(session) && !overrideId ? (
+        <CustomWorkoutView session={session} onDelete={() => setConfirmDelete(true)} />
+      ) : (
+        <>
       <section className="card">
         <div className="card-title">
           <div className="stack" style={{ gap: 2 }}>
@@ -127,6 +143,16 @@ export function Workout() {
               </button>
             )}
           </>
+        )}
+        {!hasLogs && session?.status !== 'completed' ? (
+          <button className="btn block" onClick={startCustom}>
+            <Icon name="plus" size={18} /> Custom workout
+            <span className="xs muted" style={{ fontWeight: 400 }}>
+              {session ? 'replaces this unstarted session' : 'add exercises as you go'}
+            </span>
+          </button>
+        ) : (
+          <p className="xs muted">A custom workout can be started on a day whose workout has no logged sets yet.</p>
         )}
       </section>
 
@@ -199,6 +225,9 @@ export function Workout() {
         </div>
       )}
 
+        </>
+      )}
+
       {editingStep && editingStep.kind === 'exercise' && session && (
         <StepSheet
           key={editingStep.id}
@@ -227,11 +256,11 @@ export function Workout() {
           onFinish={(discard) => {
             save(finish(session, Date.now(), discard));
             setReviewing(false);
-            history.replaceState(null, '', '#/workout');
+            navigate(pathWith(loc, { params: { review: null } }), { replace: true });
           }}
           onClose={() => {
             setReviewing(false);
-            history.replaceState(null, '', '#/workout');
+            navigate(pathWith(loc, { params: { review: null } }), { replace: true });
           }}
         />
       )}

@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { Icon } from '../components/Icon';
 import { Confirm, Stepper } from '../components/ui';
+import { useNow } from '../components/useNow';
 import { useSetContext } from '../components/useSetContext';
-import { countdownBeep, finishChime, keepAwake, unlockAudio } from '../lib/device';
+import { countdownBeep, finishChime, keepAwake, unlockAudio, type Cues } from '../lib/device';
 import { formatSet } from '../logic/progression';
 import { adjustTimer, formatClock, isPaused, pauseTimer, progress, remainingMs, resumeTimer } from '../logic/restTimer';
 import {
@@ -18,20 +19,21 @@ import {
   resume,
   unresolvedSteps,
 } from '../logic/workoutPlayer';
-import { navigate } from '../router';
+import { goBackOr, navigate } from '../router';
 import type { ExerciseStep, RestStep, WorkoutSession } from '../shared/types';
 import { useAppData } from '../state/AppData';
 
 export function FocusMode() {
   const { sessions, selectedDate } = useAppData();
-  const active =
-    sessions.find((s) => s.status === 'in_progress' && s.date === selectedDate) ?? sessions.find((s) => s.status === 'in_progress');
+  // Custom workouts have no step sequence to run, so focus mode is for planned ones only.
+  const running = sessions.filter((s) => s.status === 'in_progress' && !s.custom);
+  const active = running.find((s) => s.date === selectedDate) ?? running[0];
   if (!active) {
     return (
       <div className="focus">
         <div className="focus-body" style={{ justifyContent: 'center', textAlign: 'center' }}>
           <h1>No workout in progress</h1>
-          <button className="btn primary lg" onClick={() => navigate('workout')}>
+          <button className="btn primary lg" onClick={() => goBackOr('/workout')}>
             Back to workout
           </button>
         </div>
@@ -39,21 +41,6 @@ export function FocusMode() {
     );
   }
   return <FocusRunner key={active.id} initial={active} />;
-}
-
-/** Re-render on a short interval while `active`, and whenever the app returns to the foreground. */
-function useNow(active: boolean): number {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const tick = () => setNow(Date.now());
-    document.addEventListener('visibilitychange', tick);
-    const id = active ? window.setInterval(tick, 250) : undefined;
-    return () => {
-      document.removeEventListener('visibilitychange', tick);
-      window.clearInterval(id);
-    };
-  }, [active]);
-  return now;
 }
 
 function FocusRunner({ initial }: { initial: WorkoutSession }) {
@@ -105,7 +92,7 @@ function FocusRunner({ initial }: { initial: WorkoutSession }) {
           key={step.id}
           session={s}
           step={step}
-          sound={settings.timer.sound}
+          cues={{ sound: settings.timer.sound, vibration: settings.timer.vibration }}
           autoAdvance={settings.timer.autoAdvance}
           onUpdate={update}
         />
@@ -118,7 +105,7 @@ function FocusRunner({ initial }: { initial: WorkoutSession }) {
           title="Leave focus mode?"
           message="Your progress is saved. You can resume any time from the Workout screen."
           confirmLabel="Leave"
-          onConfirm={() => navigate('workout')}
+          onConfirm={() => goBackOr('/workout')}
           onCancel={() => setConfirmExit(false)}
         />
       )}
@@ -207,13 +194,13 @@ const RING = 2 * Math.PI * 88;
 function RestView({
   session,
   step,
-  sound,
+  cues,
   autoAdvance,
   onUpdate,
 }: {
   session: WorkoutSession;
   step: RestStep;
-  sound: boolean;
+  cues: Cues;
   autoAdvance: boolean;
   onUpdate: (s: WorkoutSession) => void;
 }) {
@@ -229,16 +216,16 @@ function RestView({
   useEffect(() => {
     if (!timer || paused) return;
     const sec = Math.ceil(rem / 1000);
-    if (sound && sec >= 1 && sec <= 3 && !beeped.current.has(sec) && rem > (sec - 1) * 1000 + 600) {
+    if ((cues.sound || cues.vibration) && sec >= 1 && sec <= 3 && !beeped.current.has(sec) && rem > (sec - 1) * 1000 + 600) {
       beeped.current.add(sec);
-      countdownBeep();
+      countdownBeep(cues);
     }
     if (done && !chimed.current) {
       chimed.current = true;
-      if (sound) finishChime();
+      finishChime(cues);
       if (autoAdvance) onUpdate(next(session, Date.now()));
     }
-  }, [rem, done, timer, paused, sound, autoAdvance, session, onUpdate]);
+  }, [rem, done, timer, paused, cues, autoAdvance, session, onUpdate]);
 
   const act = (fn: (t: NonNullable<typeof timer>, n: number) => NonNullable<typeof timer>) =>
     timer && onUpdate({ ...session, timer: fn(timer, Date.now()), updatedAt: Date.now() });
@@ -316,7 +303,7 @@ function EndView({ session, onFinish }: { session: WorkoutSession; onFinish: () 
       </p>
       <div className="focus-actions">
         {open.length ? (
-          <button className="btn primary lg block" onClick={() => (window.location.hash = '/workout?review')}>
+          <button className="btn primary lg block" onClick={() => navigate('/workout?review', { replace: true })}>
             Review {open.length} unlogged {open.length === 1 ? 'set' : 'sets'}
           </button>
         ) : (
@@ -324,7 +311,7 @@ function EndView({ session, onFinish }: { session: WorkoutSession; onFinish: () 
             className="btn primary lg block"
             onClick={() => {
               onFinish();
-              navigate('workout');
+              goBackOr('/workout');
             }}
           >
             Finish workout

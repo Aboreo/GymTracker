@@ -33,7 +33,7 @@ export function Login() {
   }
 
   return (
-    <div className="main" style={{ display: 'grid', placeItems: 'center', minHeight: '100dvh', paddingBottom: 24 }}>
+    <div className="center-screen">
       <form className="card" style={{ width: '100%', maxWidth: 380 }} onSubmit={submit}>
         <div className="stack" style={{ gap: 4 }}>
           <h1>Gymplan</h1>

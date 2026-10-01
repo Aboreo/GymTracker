@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { Icon } from '../components/Icon';
-import { DateNav, ProgressBar } from '../components/ui';
+import { DateNav, Link, ProgressBar } from '../components/ui';
 import { minStatus, rangeStatus, rollingAverage } from '../logic/analytics';
-import { formatLongDate, weekdayOf } from '../logic/dates';
+import { formatFullDate, relativeDayLabel, weekdayOf } from '../logic/dates';
 import { counts, summaryLine, expandBlocks } from '../logic/workoutPlayer';
 import { navigate } from '../router';
 import { emptyDay, useAppData } from '../state/AppData';
@@ -25,20 +25,20 @@ export function Today() {
   return (
     <div className="page">
       <div className="page-header">
-        <div className="stack" style={{ gap: 0 }}>
-          <p className="label">{formatLongDate(selectedDate)}</p>
-          <h1>Today</h1>
+        <div className="page-title">
+          <h1>{relativeDayLabel(selectedDate)}</h1>
+          <p className="small muted">{formatFullDate(selectedDate)}</p>
         </div>
         <DateNav date={selectedDate} onChange={setSelectedDate} />
       </div>
 
       {hasData && (backupDays === null || backupDays > 30) && (
-        <a href="#/plan" className="card row spread" style={{ textDecoration: 'none', color: 'inherit' }}>
+        <Link to="/settings/data" className="card row spread" style={{ textDecoration: 'none', color: 'inherit' }}>
           <span className="small">
             {backupDays === null ? 'You haven’t exported a backup yet.' : `Last backup: ${backupDays} days ago.`} Export one in Settings.
           </span>
           <Icon name="right" size={18} />
-        </a>
+        </Link>
       )}
 
       <section className="card">
@@ -56,20 +56,23 @@ export function Today() {
             <p className="muted small">
               {summaryLine(steps)}
             </p>
-            <button className="btn primary lg block" onClick={() => navigate('workout')}>
+            <button className="btn primary lg block" onClick={() => navigate(`/workout?date=${selectedDate}&from=today`)}>
               {session?.status === 'completed' ? 'View workout' : session ? 'Resume' : 'Start'}
             </button>
           </>
         ) : (
           <>
             <h2 style={{ fontSize: 'var(--fs-xl)' }}>Rest day</h2>
-            <p className="muted small">Recover well. You can still pick a workout on the Workout screen.</p>
+            <p className="muted small">Recover well. You can still pick a workout, or do a custom one.</p>
+            <button className="btn block" onClick={() => navigate(`/workout?date=${selectedDate}&from=today`)}>
+              Open workout
+            </button>
           </>
         )}
       </section>
 
       <div className="grid cols-2">
-        <a href="#/log" className="card" style={{ textDecoration: 'none', color: 'inherit' }}>
+        <Link to={`/log/diet?date=${selectedDate}&from=today`} className="card" style={{ textDecoration: 'none', color: 'inherit' }}>
           <div className="card-title">
             <span className="label">Diet</span>
             <Icon name="right" size={18} />
@@ -86,9 +89,9 @@ export function Today() {
             </span>
           </div>
           <ProgressBar value={day.protein ?? 0} max={t.proteinMax} status={minStatus(day.protein, t.proteinMin)} />
-        </a>
+        </Link>
 
-        <a href="#/log" className="card" style={{ textDecoration: 'none', color: 'inherit' }}>
+        <Link to={`/log/weight?date=${selectedDate}&from=today`} className="card" style={{ textDecoration: 'none', color: 'inherit' }}>
           <div className="card-title">
             <span className="label">Weight</span>
             <Icon name="right" size={18} />
@@ -97,7 +100,7 @@ export function Today() {
             <strong style={{ fontSize: 'var(--fs-xl)' }}>{day.weight ?? '—'}</strong> <span className="muted">{settings.units}</span>
           </p>
           <p className="small muted">{avg !== null ? `7-day average ${avg} ${settings.units}` : 'Log a morning weigh-in'}</p>
-        </a>
+        </Link>
       </div>
     </div>
   );

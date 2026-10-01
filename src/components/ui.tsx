@@ -1,6 +1,7 @@
 // Small shared UI pieces.
-import { useEffect, useState, type ReactNode } from 'react';
-import { addDays, formatLongDate, todayISO } from '../logic/dates';
+import { useEffect, useRef, useState, type AnchorHTMLAttributes, type ReactNode } from 'react';
+import { addDays, formatFullDate, relativeDayLabel, todayISO } from '../logic/dates';
+import { backToToday, navigate, pathWith, useLocation } from '../router';
 import type { Status } from '../logic/analytics';
 import type { ISODate } from '../shared/types';
 import { Icon } from './Icon';
@@ -57,31 +58,117 @@ export function Confirm({
   );
 }
 
+/**
+ * ‹ date › with fixed-width parts, so stepping through days never moves the arrows or shifts
+ * the content below. The "Today" pill keeps its space and is only hidden when on today.
+ */
 export function DateNav({ date, onChange }: { date: ISODate; onChange: (d: ISODate) => void }) {
-  const isToday = date === todayISO();
+  const today = todayISO();
+  const isToday = date === today;
+  const picker = useRef<HTMLInputElement>(null);
+  // Desktop browsers only open the calendar from its icon; iOS opens it on tap (and may throw here).
+  const openPicker = () => {
+    try {
+      picker.current?.showPicker();
+    } catch {
+      // already open, or not supported
+    }
+  };
   return (
-    <div className="row">
+    <div className="date-nav">
       <button className="btn icon ghost" onClick={() => onChange(addDays(date, -1))} aria-label="Previous day">
         <Icon name="left" />
       </button>
-      <label className="row" style={{ position: 'relative', cursor: 'pointer' }}>
-        <span style={{ fontWeight: 600 }}>{isToday ? 'Today' : formatLongDate(date)}</span>
+      <label className="date-nav-label" title={formatFullDate(date)} onClick={openPicker}>
+        <span>{relativeDayLabel(date, today)}</span>
         <input
+          ref={picker}
           type="date"
           value={date}
           onChange={(e) => e.target.value && onChange(e.target.value)}
           aria-label="Pick a date"
-          style={{ position: 'absolute', inset: 0, opacity: 0, width: '100%' }}
         />
       </label>
       <button className="btn icon ghost" onClick={() => onChange(addDays(date, 1))} aria-label="Next day">
         <Icon name="right" />
       </button>
-      {!isToday && (
-        <button className="btn sm ghost" onClick={() => onChange(todayISO())}>
-          Today
+      <button
+        className="btn sm ghost date-nav-today"
+        style={{ visibility: isToday ? 'hidden' : 'visible' }}
+        aria-hidden={isToday}
+        tabIndex={isToday ? -1 : 0}
+        onClick={() => onChange(today)}
+      >
+        Today
+      </button>
+    </div>
+  );
+}
+
+/** An in-app link: a real href (open in new tab, long-press) that navigates with history state. */
+export function Link({ to, children, ...rest }: { to: string; children: ReactNode } & Omit<AnchorHTMLAttributes<HTMLAnchorElement>, 'href'>) {
+  return (
+    <a
+      href={`#${to}`}
+      {...rest}
+      onClick={(e) => {
+        if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+        e.preventDefault();
+        navigate(to);
+      }}
+    >
+      {children}
+    </a>
+  );
+}
+
+const isStandalone = () =>
+  window.matchMedia('(display-mode: standalone)').matches || (navigator as { standalone?: boolean }).standalone === true;
+
+/**
+ * "‹ Today", shown on screens opened from a Today widget (?from=today). In the installed iOS
+ * app, where there's no system back gesture, a swipe in from the left edge does the same.
+ */
+export function BackToToday() {
+  const show = useLocation().params.get('from') === 'today';
+  useEffect(() => {
+    if (!show || !isStandalone()) return;
+    let start: { x: number; y: number } | null = null;
+    const down = (e: TouchEvent) => {
+      const t = e.touches[0];
+      start = t.clientX < 24 ? { x: t.clientX, y: t.clientY } : null;
+    };
+    const up = (e: TouchEvent) => {
+      const t = e.changedTouches[0];
+      if (start && t.clientX - start.x > 80 && Math.abs(t.clientY - start.y) < 60) backToToday();
+      start = null;
+    };
+    window.addEventListener('touchstart', down, { passive: true });
+    window.addEventListener('touchend', up, { passive: true });
+    return () => {
+      window.removeEventListener('touchstart', down);
+      window.removeEventListener('touchend', up);
+    };
+  }, [show]);
+  if (!show) return null;
+  return (
+    <button className="btn sm ghost back-link" onClick={backToToday}>
+      <Icon name="left" size={20} />
+      Today
+    </button>
+  );
+}
+
+/** Segmented control whose segments are routes (e.g. /log/diet, /log/weight). */
+export function SubNav({ label, items }: { label: string; items: { sub: string; label: string }[] }) {
+  const loc = useLocation();
+  return (
+    <div className="segmented sub-nav" role="group" aria-label={label}>
+      {items.map((i) => (
+        <button key={i.sub} aria-pressed={loc.sub === i.sub} onClick={() => navigate(pathWith(loc, { sub: i.sub }), { replace: true })}>
+          {i.label}
         </button>
-      )}
+      ))}
     </div>
   );
 }
@@ -203,4 +290,42 @@ export function Stepper({
 
 export function Empty({ children }: { children: ReactNode }) {
   return <div className="empty">{children}</div>;
+}
+
+/** A settings-style card with a title. */
+export function Section({ title, subtitle, children }: { title: string; subtitle?: string; children: ReactNode }) {
+  return (
+    <section className="card">
+      <div className="stack" style={{ gap: 2 }}>
+        <h2>{title}</h2>
+        {subtitle && <p className="small muted">{subtitle}</p>}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+export function Num({ label, value, onCommit }: { label: string; value: number; onCommit: (v: number | null) => void }) {
+  return (
+    <label className="field">
+      <span>{label}</span>
+      <NumberInput value={value} onCommit={onCommit} />
+    </label>
+  );
+}
+
+/** "ⓘ How is this calculated?" — a plain disclosure explaining a rule-based calculation. */
+export function Explainer({ title = 'How is this calculated?', children }: { title?: string; children: ReactNode }) {
+  return (
+    <details className="explainer">
+      <summary>
+        <Icon name="info" size={18} />
+        {title}
+      </summary>
+      <div className="explainer-body">
+        {children}
+        <p className="xs muted">Calculated on your device from your logged data. No AI is used.</p>
+      </div>
+    </details>
+  );
 }

@@ -156,12 +156,104 @@ textarea {
   }
 }
 
+/* Login and splash: centred in the dynamic viewport (100vh is wrong on iOS Safari), clear of the
+   notch/home indicator. min-height (not height) lets the card scroll when the keyboard is open. */
+.center-screen {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: max(var(--space-4), env(safe-area-inset-top)) max(var(--space-4), env(safe-area-inset-right))
+    max(var(--space-4), env(safe-area-inset-bottom)) max(var(--space-4), env(safe-area-inset-left));
+}
+
+/* Page title that can shrink (truncates) so the controls next to it keep their place. */
+.page-title {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.page-title > * {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.btn.back-link {
+  flex-basis: 100%;
+  justify-content: flex-start;
+  align-self: flex-start;
+  margin: calc(-1 * var(--space-2)) 0 calc(-1 * var(--space-2)) calc(-1 * var(--space-3));
+  padding-left: var(--space-1);
+  gap: 0;
+  color: var(--accent);
+}
+
+/* Date navigator: every part has a fixed width, so nothing moves when the date changes. */
+.date-nav {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: none;
+}
+.date-nav-label {
+  position: relative;
+  width: 7.5rem;
+  text-align: center;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+.date-nav-label input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  width: 100%;
+  cursor: pointer;
+}
+.date-nav-today {
+  width: 4.5rem;
+}
+/* Phone: the date navigator always gets its own row, so the title length never wraps it. */
+@media (max-width: 767px) {
+  .page-header > .page-title,
+  .page-header > .date-nav {
+    flex-basis: 100%;
+  }
+}
+
+.sub-nav {
+  align-self: flex-start;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+/* Weekly schedule: compact grid of weekday → workout. */
+.split-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: var(--space-2) var(--space-3);
+}
+.split-day {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
 /* On phone the sync status sits above each page (on desktop it's in the sidebar). */
 .mobile-sync {
   display: flex;
+  align-items: center;
+  gap: var(--space-2);
   justify-content: flex-end;
   max-width: var(--content-max);
   margin: calc(-1 * var(--space-2)) auto var(--space-1);
+}
+.mobile-sync .btn {
+  color: var(--text-muted);
 }
 @media (min-width: 768px) {
   .mobile-sync {
@@ -375,6 +467,7 @@ button.list-item {
   gap: 2px;
 }
 .segmented button {
+  white-space: nowrap;
   min-height: 36px;
   padding: 0 var(--space-4);
   border: 0;
@@ -900,4 +993,80 @@ select.input {
   padding: var(--space-2) var(--space-3);
   border-radius: 10px;
   background: var(--surface-2);
+}
+
+/* Diet: saved-item suggestions under the name field, and the live total preview. */
+.suggestions {
+  display: flex;
+  flex-direction: column;
+  margin-top: calc(-1 * var(--space-2));
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+.suggestions .list-item {
+  min-height: 40px;
+  color: inherit;
+}
+.grid.macro-fields {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.preview-total {
+  padding: var(--space-2) var(--space-3);
+  border-radius: 10px;
+  background: var(--accent-soft);
+}
+
+/* Custom workout: inline rest timer and the exercise picker. */
+.rest-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: 12px;
+  background: var(--accent-soft);
+}
+.rest-bar-clock {
+  margin-right: auto;
+  font-size: var(--fs-xl);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.picker-list {
+  max-height: 45dvh;
+  overflow-y: auto;
+}
+
+/* "How is this calculated?" disclosure */
+.explainer summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: var(--tap);
+  cursor: pointer;
+  color: var(--accent);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  list-style: none;
+}
+.explainer summary::-webkit-details-marker {
+  display: none;
+}
+.explainer-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-radius: 10px;
+  background: var(--surface-2);
+  font-size: var(--fs-sm);
+}
+.explainer-body ul {
+  margin: 0;
+  padding-left: 1.2em;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
 }

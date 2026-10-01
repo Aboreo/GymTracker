@@ -17,7 +17,7 @@ import {
   YAxis,
 } from 'recharts';
 import { axisProps, ChartCard, dateTick, Legend, tooltipProps, useChartColors } from '../components/charts';
-import { Empty } from '../components/ui';
+import { Empty, Explainer } from '../components/ui';
 import {
   caloriesVsWeight,
   daysOnTarget,
@@ -139,7 +139,61 @@ function InsightsCard({ working, notWorking, enough, weeks }: { working: Insight
           </div>
         </div>
       )}
+      <InsightsExplainer />
     </ChartCard>
+  );
+}
+
+// Mirrors insights() and the helpers it uses in logic/analytics.ts. Keep the numbers in sync.
+function InsightsExplainer() {
+  const { settings } = useAppData();
+  const n = settings.nutrition;
+  const a = settings.adjustment;
+  const u = settings.units;
+  return (
+    <Explainer title="How are these insights calculated?">
+      <p>
+        Each insight is a fixed rule applied to your logged data. Insights appear once you have at least {MIN_WEEKS_FOR_INSIGHTS} different
+        weeks with logged sets, weigh-ins or calories. Only logged sets count: pending and “log later” sets are ignored, and custom workouts
+        count like any other.
+      </p>
+      <ul>
+        <li>
+          <strong>Progressed:</strong> an exercise beat everything before it (heavier top set, more reps at that weight, or a higher
+          estimated 1RM using the Epley formula, weight × (1 + reps ÷ 30)) in a session within the last 4 weeks.
+        </li>
+        <li>
+          <strong>Stalled:</strong> an exercise with at least 4 sessions and no improvement in weight, reps or estimated 1RM for its last 3
+          or more sessions. For assisted exercises, less assistance counts as better.
+        </li>
+        <li>
+          <strong>Protein:</strong> needs 7 or more days with protein logged. The share of those days at or above {n.proteinMin} g: 60% or
+          more is “working”, less is “worth a look”.
+        </li>
+        <li>
+          <strong>Protein and strength:</strong> weeks with 3+ logged days are split into protein weeks (protein hit on 70%+ of days) and
+          other weeks. The average weekly change in each exercise’s best estimated 1RM is compared between them. It needs 2+ weeks of each
+          and a gap of at least 0.5 percentage points.
+        </li>
+        <li>
+          <strong>Bodyweight rate:</strong> the same rule as Log → Weight. The weekly change comes from weekly averages, the target is +
+          {a.gainMinPerWeek} to +{a.gainMaxPerWeek} {u}/week, and it needs 3+ weeks with 2+ weigh-ins each.
+        </li>
+        <li>
+          <strong>Lower volume:</strong> sets per muscle group over the last 4 weeks. A group is flagged when it has fewer than half the sets
+          of the median group. It needs 3+ groups trained.
+        </li>
+        <li>
+          <strong>Calories and lifting:</strong> a correlation (Pearson’s r) between average calories and lifting change across weeks
+          that have both, with at least {MIN_WEEKS_FOR_INSIGHTS} such weeks. |r| ≥ 0.5 is a “fairly clear” link, 0.3–0.5 is “weak”, and
+          below that there is no clear link. A correlation is a pattern, not proof that one causes the other.
+        </li>
+        <li>
+          <strong>Adherence chart:</strong> completed planned workouts per week, compared with the non-rest days in your weekly schedule.
+          Custom workouts don’t count toward it.
+        </li>
+      </ul>
+    </Explainer>
   );
 }
 
@@ -424,7 +478,7 @@ function AdherenceCard({ from, today, c }: { from: string; today: string; c: C }
   return (
     <ChartCard
       title="Adherence"
-      subtitle={`Workouts completed per week vs ${planned} planned`}
+      subtitle={`Planned workouts completed per week vs ${planned} planned (custom workouts not counted)`}
       right={<span className={`badge ${streak > 0 ? 'good' : ''}`}>{streak}-week streak</span>}
     >
       {done === 0 ? (
