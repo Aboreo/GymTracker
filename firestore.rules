@@ -4,11 +4,11 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     // OWNER ALLOW-LIST
-    // Replace REPLACE_WITH_YOUR_UID with your uid (Firebase console → Authentication → Users → User UID).
+    // The second entry is your uid (Firebase console → Authentication → Users → User UID).
     // 'dev-owner' is the local emulator account created by `npm run dev:user`. It cannot be
     // created through email/password sign-up in production (those uids are random), so it is harmless.
     function allowedUid(uid) {
-      return uid in ['dev-owner', 'REPLACE_WITH_YOUR_UID'];
+      return uid in ['dev-owner', 'WHLolx5Lj4Tjj4o17QTQj8ak2cg1'];
     }
 
     function isOwner(uid) {

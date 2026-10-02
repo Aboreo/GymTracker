@@ -1,0 +1,7 @@
+.env
+.env.*
+.emulator-data
+firebase-export-*
+*.log
+dist
+node_modules

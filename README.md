@@ -4,7 +4,7 @@ A personal, offline-first PWA for logging workouts, diet and bodyweight — buil
 
 - **iPhone:** log workouts at the gym (works with no signal, syncs later).
 - **Mac:** analyse progress and edit your plan.
-- Stack: Vite + React + TypeScript (strict), Firebase Auth (email/password) + Firestore + Hosting, Recharts, vite-plugin-pwa, Vitest, oxlint.
+- Stack: Vite + React + TypeScript (strict), Firebase Auth (email/password) + Firestore, hosted on Vercel, Recharts, vite-plugin-pwa, Vitest, oxlint.
 
 ---
 
@@ -66,14 +66,19 @@ Now only your uid can read or write `users/<uid>/**`; everything else is denied,
 ## 3. Deploy
 
 ```bash
-npm run deploy     # = npm run build && firebase deploy --only hosting,firestore:rules
+npm i -g vercel && vercel login            # once
+vercel link                                 # once: link this folder to a Vercel project
+# once: add the four VITE_FIREBASE_* values from .env to the Vercel project (Production):
+#   vercel env add VITE_FIREBASE_API_KEY production   (repeat for AUTH_DOMAIN, PROJECT_ID, APP_ID)
+npm run deploy         # = vercel --prod (Vercel builds with `npm run build`)
+npm run deploy:rules   # = firebase deploy --only firestore:rules (whenever firestore.rules changes)
 ```
 
-Your app is live at `https://<project-id>.web.app`. Hosting serves `index.html` for every path (SPA rewrite) and never caches `index.html`/`sw.js`, so updates arrive on the next launch.
+Your app is live at `https://<vercel-project>.vercel.app`. `vercel.json` serves `index.html` for every path (SPA rewrite) and never caches `index.html`/`sw.js`, so updates arrive on the next launch.
 
 ## 4. Install on your iPhone
 
-1. Open `https://<project-id>.web.app` in **Safari**.
+1. Open `https://<vercel-project>.vercel.app` in **Safari**.
 2. Share button → **Add to Home Screen** → Add.
 3. Open it from the Home Screen and **sign in once inside the installed app** — the Home Screen app has its own storage, separate from Safari, so a Safari login doesn't carry over. After that you stay signed in.
 
@@ -96,7 +101,7 @@ Safari → open the URL → **File → Add to Dock** (or just use any browser). 
 
 ### Editing your plan (Plan)
 
-Plan has three sections: **Workouts**, **Exercises** and **Nutrition**.
+Plan has four sections: **Workouts**, **Exercises**, **Foods** and **Nutrition**.
 
 - **Weekly schedule** (top of Workouts): pick a workout (or Rest) for each weekday. Workouts used in the schedule are listed first, and each shows which days it runs.
 - **Workouts:** create, rename, duplicate, delete. Each workout is an ordered list of **blocks**:
@@ -105,6 +110,7 @@ Plan has three sections: **Workouts**, **Exercises** and **Nutrition**.
 - **Targets:** fixed reps, a rep range, or to failure (optionally "aim for" a ceiling).
 - **Reorder** blocks with the drag handle (Mac) or the ↑/↓ buttons (phone).
 - **Exercise library** (Exercises): rename, set muscle group, **rest type** (compound / isolation / abs, which picks the default rest), mark **Assisted** (weight = assistance, lower is better). Renaming keeps history — charts follow an exercise's id, not its name.
+- **Food library** (Foods): see *Diet and weight* below.
 - **Nutrition:** maintenance and daily calorie target and range, protein and fat ranges (carbs fill the rest), the target weekly weight gain and the calorie-adjustment step.
 - The orange **preview** shows exactly what focus mode will run, e.g. `Curls × 10 → Pull-ups to failure → Rest 30s → Curls × 10 → Pull-ups to failure`.
 - Changes apply to **future** sessions only. Each session stores a snapshot of names and targets, so past workouts never change. You'll see a warning if you edit a workout that has a session in progress.
@@ -153,15 +159,29 @@ iOS limitations:
 
 ### Diet and weight (Log)
 
-**Diet** — log what you ate, no setup needed:
+**Diet** — log what you ate. Two buttons on Log → Diet:
 
-- **Item eaten:** name (optional), calories / protein / fat / carbs **per serving**, and **servings** (decimals like 1.5 or 0.25; chips 0.5× 1× 1.5× 2× and −/+). Carbs **auto-fill** from remaining calories (kcal − 4·protein − 9·fat) ÷ 4, or type your own (tap *Auto* to go back). A live preview shows exactly what will be added (per-serving × servings). Meal defaults by time of day.
-- **Save for next time** (off by default) remembers the item; it then appears as a suggestion — **Recent** first (from what you've eaten lately), then name matches — and picking one fills everything in.
-- **Quick add:** type a total (calories and/or macros), no per-serving math.
-- If the macros don't roughly match the calories (4/4/9 kcal per g, ±15%) you get a gentle warning, e.g. *"These macros add up to ~2,700 kcal, but you entered 400"* — it never blocks saving.
-- Entries are listed by meal; tap one to edit (any value, servings, meal) or delete. The day's totals and bars update immediately (green = on target, amber = close, red = off).
-- **Saved items** are managed in Settings → Preferences (rename, ★ favourite, delete). Up to 300; when full, the least recently saved non-starred ones are dropped.
-- Days logged before this existed (daily totals only) show as one **"Manual total"** entry — nothing is lost, and adding items adds to it.
+- **+ Log meal** logs something you ate to the day you're viewing. Tap **Choose food** to pick from your library: **Favorites**, then **Recent**, then everything else, with search. Picking a food fills in its name and per-serving values. Or choose **"Not in my library, enter manually"** and type it in. Every value stays editable. **Servings (×)** takes decimals like 1.5 or 0.25 (chips 0.5× 1× 1.5× 2× and −/+), and a live total shows exactly what will be added (per-serving × servings). Meal group defaults by time of day. The button reads **Add to today**, or e.g. **Add to Mon, Oct 5** on another day.
+- When you tap it, the app may ask about your library. The meal is added whatever you choose:
+  - Picked a library food and **changed** its name or a value: **Update "…" in library** / **Save as new food** / **Just this once**.
+  - **Typed it in** with a name: **Save this to your library?** → **Save to library** / **Not now**.
+  - Picked a food and changed nothing: no question.
+  - **Cancel** (or tapping outside) goes back to the sheet without adding anything.
+- After adding, a small **Added · Add another** message appears. *Add another* opens a fresh sheet in the same meal group.
+- **Add food** adds a food to your **library** only (nothing is logged).
+- **Quick add**: type a total (calories and/or macros), no per-serving math.
+- All of these sheets share one layout: name, a large **Calories** field, then **Protein / Fat / Carbs** in one row, *"Per 1 serving"*, and the serving description behind **More**. Carbs fill in **auto**matically from the remaining calories (kcal − 4·protein − 9·fat) ÷ 4 until you type your own; tap *auto* to switch back. If the macros don't roughly match the calories (4/4/9 kcal per g, ±15%), a small amber line warns you, e.g. *"These macros add up to ~2,700 kcal, but you entered 400"*. It never blocks saving.
+- Entries are listed by meal. Tap one to edit it in the same sheet (**Save changes**, no library question) or delete it. The day's totals and bars update immediately (green = on target, amber = close, red = off).
+- Days logged before entries existed (daily totals only) show as one **"Manual total"** entry. Nothing is lost, and adding meals adds to it.
+
+**Food library** — **Plan → Foods**, next to the exercise library. There are also links from Log → Diet and Settings → Preferences.
+
+- Search, with ★ favorites at the top, then **A–Z** or **Recent**. Each row shows the name, calories per serving and serving description. Tap a row to edit or delete it (delete asks first), and tap ★ to star a food.
+- Values are **per serving**. Logged meals store a **snapshot** of the values, so editing or deleting a library food never changes past days.
+- Names are unique (ignoring case). Adding an existing name offers **Save as "Name (2)"** or Cancel.
+- Up to **500 foods**. A notice appears from 450. When full, adding is blocked until you delete something. Nothing is ever removed automatically.
+- "Recent" is worked out from the meals you've logged, so logging a food costs no extra write.
+- Older "saved items" live in the same document and are upgraded in place the first time the library loads (missing fields filled in, same-name duplicates merged).
 
 **Weight:** morning weigh-in, recent history and the **7-day rolling average**, weekly change, and the calorie suggestion. **ⓘ How is this calculated?** explains each rule with your current numbers.
 
@@ -173,7 +193,7 @@ iOS limitations:
 | --- | --- |
 | **Account** | Signed-in email, change password, sign out |
 | **Rest** | Default rest for compound / isolation / abs, auto-advance vs wait-for-tap, sound, vibration, auto-start rest in custom workouts |
-| **Preferences** | Units (lb/kg, with conversion), weight step, theme (system/light/dark, per device), saved items |
+| **Preferences** | Units (lb/kg, with conversion), weight step, theme (system/light/dark, per device), link to the food library |
 | **Data** | JSON backup and restore, CSV exports, last-backup date, load/remove sample data |
 
 Where things moved from the old *Plan & Settings* screen: weekly split, workouts, exercise library and nutrition targets → **Plan**; units, weight step → **Settings → Preferences**; default rest, auto-advance, sound → **Settings → Rest**; backup, CSV, sample data → **Settings → Data**; sign out → **Settings → Account**. The old single "default rest" became the compound default.
@@ -184,7 +204,7 @@ Where things moved from the old *Plan & Settings* screen: weekly split, workouts
 
 Firebase's free plan has **no automatic backups**.
 
-- **Export:** Settings → Data → **Export backup (JSON)** (includes saved items). On iPhone this opens the share sheet — choose *Save to Files* (iCloud Drive). The Today screen reminds you if it's been more than 30 days.
+- **Export:** Settings → Data → **Export backup (JSON)** (includes the food library). On iPhone this opens the share sheet — choose *Save to Files* (iCloud Drive). The Today screen reminds you if it's been more than 30 days.
 - **Restore:** **Restore from backup…** → pick the JSON file → confirm. It replaces your settings/plan and any days/workouts with the same dates/ids; other data is left alone.
 - **CSV:** separate exports for workouts (one row per set), nutrition and weight, for spreadsheets.
 
@@ -200,10 +220,10 @@ Spark limits: **50,000 reads/day, 20,000 writes/day, 1 GiB stored**.
 
 | What | Cost |
 | --- | --- |
-| Data layout | 1 settings doc (plan + preferences), 1 doc for **all saved items**, 1 doc per **day** (meal entries + totals + weight), 1 doc per **workout** (all its sets). A year ≈ 365 + ~200 small docs, well under 5 MB. |
+| Data layout | 1 settings doc (plan + preferences), 1 doc for the **whole food library**, 1 doc per **day** (meal entries + totals + weight), 1 doc per **workout** (all its sets). A year ≈ 365 + ~200 small docs, well under 5 MB. |
 | Opening the app | Live listeners on the **last 12 months** of days and sessions. The first load reads each doc once (~600 reads/year of data); after that, Firestore's local cache means only **changed** docs are re-read. |
 | Screens and charts | All analytics run on the device from memory. Changing a chart filter or switching screens costs **0 reads**. "All time" loads older data **once** on demand. |
-| Logging | ~1 write per set during a workout (so a closed app never loses progress) ≈ 20–30 writes per workout; 1 write per diet entry added/edited (+1 if you save the item); saved items load with 1 read, only when needed. Plan edits are batched (written 0.6s after you stop typing). |
+| Logging | ~1 write per set during a workout (so a closed app never loses progress) ≈ 20–30 writes per workout; 1 write per diet entry added/edited (+1 when you save or update a library food); the food library loads with 1 read, only when needed. Plan edits are batched (written 0.6s after you stop typing). |
 | Offline | Writes queue locally and sync when signal returns, at no extra cost. |
 
 Realistic use is on the order of **100–1,000 reads and ~50 writes per day** — around 1% of the free quota. The dev-only R · W counter lets you check.
