@@ -21,6 +21,7 @@ import {
   type Unsubscribe,
 } from 'firebase/firestore';
 import { db } from './firebase';
+import { normalizeFoods } from './logic/diet';
 import type { DayEntry, ExportFile, ISODate, SavedFood, Settings, WorkoutSession } from './shared/types';
 
 // ---------------------------------------------------------------------------------------------
@@ -165,13 +166,16 @@ document.addEventListener('visibilitychange', () => {
 });
 
 // ---------------------------------------------------------------------------------------------
-// Saved items: every item in ONE document (1 read to load, 1 write per save)
+// Food library: every food in ONE document (1 read to load, 1 write per change)
 
-/** Loads once (from the local cache when offline). Throws if neither server nor cache has it. */
-export async function loadFoods(uid: string): Promise<SavedFood[]> {
+/**
+ * Loads once (from the local cache when offline). Throws if neither server nor cache has it.
+ * Returns the stored list as is: callers run it through normalizeFoods (migration).
+ */
+export async function loadFoods(uid: string): Promise<unknown> {
   const snap = await getDoc(foodsRef(uid));
   if (!snap.metadata.fromCache) countReads(1);
-  return (snap.data()?.items as SavedFood[] | undefined) ?? [];
+  return snap.data()?.items ?? [];
 }
 
 export function saveFoods(uid: string, items: SavedFood[]): void {
@@ -275,7 +279,7 @@ export async function exportAll(uid: string): Promise<ExportFile> {
     getDoc(settingsRef(uid)),
     getDocs(daysCol(uid)),
     getDocs(sessionsCol(uid)),
-    loadFoods(uid),
+    loadFoods(uid).then((raw) => normalizeFoods(raw).foods),
   ]);
   countReads(1);
   countSnapshot(daysSnap);
@@ -293,7 +297,7 @@ export async function exportAll(uid: string): Promise<ExportFile> {
 
 /**
  * Restores a backup. Documents with the same id are overwritten; others are left alone.
- * Saved items (file.foods) are restored by the caller through AppData, so its cache stays current.
+ * The food library (file.foods) is restored by the caller through AppData, so its cache stays current.
  */
 export async function importAll(uid: string, file: ExportFile): Promise<void> {
   saveSettings(uid, file.settings);

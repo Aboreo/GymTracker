@@ -5,6 +5,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import * as api from '../api';
 import { defaultSettings } from '../data/defaultPlan';
 import { addDays, isISODate, todayISO } from '../logic/dates';
+import { normalizeFoods } from '../logic/diet';
 import { normalizeSettings } from '../logic/settings';
 import { navigate, parseHash, pathWith, useLocation } from '../router';
 import type { DayEntry, ISODate, SavedFood, Settings, WorkoutSession } from '../shared/types';
@@ -27,7 +28,7 @@ interface AppData {
   saveDay: (d: DayEntry) => void;
   saveSession: (s: WorkoutSession) => void;
   deleteSession: (id: string) => void;
-  /** Saved items: null until loaded, 'error' if they couldn't be loaded (saving is then disabled). */
+  /** Food library: null until loaded, 'error' if it couldn't be loaded (saving is then disabled). */
   foods: SavedFood[] | null | 'error';
   loadFoods: () => void;
   saveFoods: (items: SavedFood[]) => void;
@@ -83,10 +84,18 @@ export function AppDataProvider({ uid, children, loading }: { uid: string; child
   const [foods, setFoods] = useState<SavedFood[] | null | 'error'>(null);
   const [foodsRequested, setFoodsRequested] = useState(false);
 
-  // Saved items are only loaded when a screen needs them, and only once per app launch.
+  // The food library is only loaded when a screen needs it, and only once per app launch.
+  // Old "saved items" live in the same document; normalizeFoods upgrades them (one write, once).
   useEffect(() => {
     if (!foodsRequested) return;
-    api.loadFoods(uid).then(setFoods, () => setFoods('error'));
+    api.loadFoods(uid).then(
+      (raw) => {
+        const { foods: list, changed } = normalizeFoods(raw);
+        if (changed) api.saveFoods(uid, list);
+        setFoods(list);
+      },
+      () => setFoods('error'),
+    );
   }, [uid, foodsRequested]);
 
   useEffect(() => {

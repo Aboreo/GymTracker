@@ -1,6 +1,22 @@
 import { describe, expect, it } from 'vitest';
 import type { DayEntry, MealEntry, SavedFood } from '../shared/types';
-import { dayEntries, FOOD_CAP, macroMismatch, mealForHour, removeEntry, saveFood, suggestFoods, sumEntries, upsertEntry } from './diet';
+import {
+  addFood,
+  dayEntries,
+  FOOD_CAP,
+  libraryPrompt,
+  macroMismatch,
+  mealForHour,
+  normalizeFoods,
+  pickerSections,
+  recentFoodIds,
+  removeEntry,
+  sortLibrary,
+  sumEntries,
+  uniqueName,
+  updateFood,
+  upsertEntry,
+} from './diet';
 
 const day = (p: Partial<DayEntry> = {}): DayEntry => ({
   date: '2026-09-30', kcal: null, protein: null, fat: null, carbs: null, carbsManual: false, weight: null, updatedAt: 5, sample: false, ...p,
@@ -71,33 +87,134 @@ describe('mealForHour', () => {
   });
 });
 
-describe('saved items', () => {
+describe('food library', () => {
   let n = 0;
   const id = () => `f${n++}`;
-  const food = { name: 'Bagel', kcal: 300, protein: 10, fat: 2, carbs: 58 };
+  const bagel = { name: 'Bagel', kcal: 300, protein: 10, fat: 2, carbs: 58 };
+  const lib = (...names: string[]): SavedFood[] =>
+    names.map((name, i) => ({ ...bagel, id: `L${i}`, name, favorite: false, lastUsedAt: i }));
 
-  it('updates an existing item with the same name instead of duplicating it', () => {
-    let list = saveFood([], food, 1, id);
-    list = saveFood(list, { ...food, name: 'bagel ', kcal: 320 }, 2, id);
-    expect(list).toHaveLength(1);
-    expect(list[0].kcal).toBe(320);
-    expect(list[0].lastUsedAt).toBe(2);
+  describe('duplicate names', () => {
+    it('refuses a name already in the library (ignoring case and spaces) and suggests "Name (2)"', () => {
+      const r = addFood(lib('Bagel'), { ...bagel, name: ' bagel ' }, 1, id);
+      expect(r).toMatchObject({ ok: false, reason: 'duplicate', suggestion: 'bagel (2)' });
+    });
+    it('suggests the next free number', () => {
+      expect(uniqueName(lib('Bagel', 'Bagel (2)', 'Bagel (3)'), 'Bagel')).toBe('Bagel (4)');
+      expect(uniqueName(lib('Bagel', 'Bagel (2)'), 'Bagel (2)')).toBe('Bagel (3)');
+    });
+    it('adds under the suggested name, keeping the original', () => {
+      const r = addFood(lib('Bagel'), { ...bagel, name: 'Bagel (2)', kcal: 320 }, 1, id);
+      expect(r.ok && r.list.map((f) => f.name)).toEqual(['Bagel', 'Bagel (2)']);
+    });
+    it('lets an update keep its own name, but not take another food\'s', () => {
+      const list = lib('Bagel', 'Oats');
+      expect(updateFood(list, 'L0', { ...bagel, name: 'BAGEL', kcal: 280 }, 5)).toMatchObject({ ok: true });
+      expect(updateFood(list, 'L0', { ...bagel, name: 'oats' }, 5)).toMatchObject({ ok: false, reason: 'duplicate', suggestion: 'oats (2)' });
+    });
   });
-  it('evicts the least recently used non-favorites over the cap', () => {
-    const list: SavedFood[] = Array.from({ length: FOOD_CAP }, (_, i) => ({ ...food, id: `x${i}`, name: `F${i}`, lastUsedAt: i + 10, favorite: i === 0 }));
-    const next = saveFood(list, { ...food, name: 'New' }, 999, id);
-    expect(next).toHaveLength(FOOD_CAP);
-    expect(next.some((f) => f.id === 'x0')).toBe(true); // favorite kept even though oldest
-    expect(next.some((f) => f.id === 'x1')).toBe(false); // oldest non-favorite evicted
+
+  describe('500-food cap', () => {
+    const full = () => Array.from({ length: FOOD_CAP }, (_, i): SavedFood => ({ ...bagel, id: `x${i}`, name: `F${i}`, favorite: false, lastUsedAt: i }));
+    it('blocks adding when full and never evicts anything', () => {
+      const list = full();
+      expect(addFood(list, { ...bagel, name: 'New' }, 1, id)).toEqual({ ok: false, reason: 'full' });
+      expect(list).toHaveLength(FOOD_CAP);
+    });
+    it('still allows editing when full', () => {
+      expect(updateFood(full(), 'x0', { ...bagel, name: 'F0', kcal: 1 }, 1)).toMatchObject({ ok: true });
+    });
+    it('allows adding just below the cap', () => {
+      const r = addFood(full().slice(1), { ...bagel, name: 'New' }, 1, id);
+      expect(r.ok && r.list).toHaveLength(FOOD_CAP);
+    });
   });
-  it('suggests recently eaten items first, then name matches', () => {
+
+  it('updating keeps the id and favorite, and stores the edited values', () => {
+    const list = lib('Bagel');
+    list[0].favorite = true;
+    const r = updateFood(list, 'L0', { ...bagel, kcal: 280, servingNote: ' 1 bagel ' }, 9);
+    expect(r.ok && r.food).toEqual({ ...bagel, id: 'L0', kcal: 280, servingNote: '1 bagel', favorite: true, lastUsedAt: 9 });
+  });
+
+  describe('snapshots', () => {
+    it('editing or deleting a library food never changes logged entries or day totals', () => {
+      const list = lib('Bagel');
+      const food = list[0];
+      const e = item({ foodId: food.id, name: food.name, kcalPerServing: food.kcal, proteinPerServing: food.protein, fatPerServing: food.fat, carbsPerServing: food.carbs, servings: 2 });
+      const d = upsertEntry(day(), e);
+      const before = structuredClone(d);
+      const edited = updateFood(list, food.id, { ...bagel, kcal: 999 }, 2);
+      expect(edited.ok && edited.list[0].kcal).toBe(999);
+      expect(list.filter((f) => f.id !== food.id)).toEqual([]);
+      expect(d).toEqual(before);
+      expect(d.kcal).toBe(600);
+    });
+  });
+
+  describe('which library question "Add to today" asks', () => {
+    const picked: SavedFood = { ...bagel, id: 'L0', favorite: false, lastUsedAt: 0 };
+    it('none for a picked food left unchanged (serving note and servings are not compared)', () => {
+      expect(libraryPrompt({ ...bagel, servingNote: 'half' }, picked)).toBe('none');
+    });
+    it('changed when any nutrition value or the name was edited', () => {
+      expect(libraryPrompt({ ...bagel, kcal: 301 }, picked)).toBe('changed');
+      expect(libraryPrompt({ ...bagel, protein: 11 }, picked)).toBe('changed');
+      expect(libraryPrompt({ ...bagel, fat: 2.5 }, picked)).toBe('changed');
+      expect(libraryPrompt({ ...bagel, carbs: 0 }, picked)).toBe('changed');
+      expect(libraryPrompt({ ...bagel, name: 'Bagel w/ butter' }, picked)).toBe('changed');
+    });
+    it('save for a typed-in food with a name, none without one', () => {
+      expect(libraryPrompt(bagel, null)).toBe('save');
+      expect(libraryPrompt({ ...bagel, name: '  ' }, null)).toBe('none');
+    });
+  });
+
+  describe('migration of old saved items', () => {
+    it('fills in favorite, trims, and merges same-name duplicates without losing a star', () => {
+      const old = [
+        { id: 'a', name: 'Oats ', kcal: 150, protein: 5, fat: 3, carbs: 27, lastUsedAt: 1, favorite: true },
+        { id: 'b', name: 'Bagel', kcal: 300, protein: 10, fat: 2, carbs: 58, lastUsedAt: 2 },
+        { id: 'c', name: 'oats', kcal: 160, protein: 6, fat: 3, carbs: 28, lastUsedAt: 3 },
+      ];
+      const { foods, changed } = normalizeFoods(old);
+      expect(changed).toBe(true);
+      expect(foods).toEqual([
+        { id: 'c', name: 'oats', kcal: 160, protein: 6, fat: 3, carbs: 28, lastUsedAt: 3, favorite: true },
+        { id: 'b', name: 'Bagel', kcal: 300, protein: 10, fat: 2, carbs: 58, lastUsedAt: 2, favorite: false },
+      ]);
+    });
+    it('keeps serving notes and drops rows with no name', () => {
+      const { foods } = normalizeFoods([{ id: 'a', name: 'Bar', kcal: 200, protein: 20, fat: 7, carbs: 20, servingNote: '1 bar', lastUsedAt: 1 }, { id: 'x', name: '' }]);
+      expect(foods).toEqual([{ id: 'a', name: 'Bar', kcal: 200, protein: 20, fat: 7, carbs: 20, servingNote: '1 bar', favorite: false, lastUsedAt: 1 }]);
+    });
+    it('reports no change for an already-migrated library (no write), whatever the field order', () => {
+      const stored = [{ lastUsedAt: 1, favorite: false, carbs: 58, fat: 2, protein: 10, kcal: 300, name: 'Bagel', id: 'b' }];
+      expect(normalizeFoods(stored).changed).toBe(false);
+      expect(normalizeFoods([]).changed).toBe(false);
+      expect(normalizeFoods(undefined)).toEqual({ foods: [], changed: false });
+    });
+  });
+
+  describe('ordering', () => {
     const list: SavedFood[] = [
-      { ...food, id: '1', name: 'Oats', lastUsedAt: 1 },
-      { ...food, id: '2', name: 'Bagel', lastUsedAt: 2 },
-      { ...food, id: '3', name: 'Chicken bowl', lastUsedAt: 3 },
+      { ...bagel, id: '1', name: 'Oats', favorite: false, lastUsedAt: 1 },
+      { ...bagel, id: '2', name: 'Bagel', favorite: false, lastUsedAt: 2 },
+      { ...bagel, id: '3', name: 'Chicken bowl', favorite: true, lastUsedAt: 3 },
+      { ...bagel, id: '4', name: 'Apple', favorite: false, lastUsedAt: 4 },
     ];
-    const recent = [item({ name: 'oats', loggedAt: 50 }), item({ name: 'Unknown', loggedAt: 60 })];
-    expect(suggestFoods(list, '', recent).map((f) => f.id)).toEqual(['1', '3', '2']);
-    expect(suggestFoods(list, 'b', recent).map((f) => f.id)).toEqual(['2', '3']);
+    it('finds recent foods from logged entries, by foodId or (older entries) by name', () => {
+      const entries = [item({ foodId: '2', loggedAt: 10 }), item({ name: 'oats', loggedAt: 50 }), item({ name: 'Unknown', loggedAt: 60 })];
+      expect(recentFoodIds(list, entries)).toEqual(['1', '2']);
+    });
+    it('library: starred first, then A–Z or most recently logged, filtered by search', () => {
+      expect(sortLibrary(list, '', 'az', []).map((f) => f.name)).toEqual(['Chicken bowl', 'Apple', 'Bagel', 'Oats']);
+      expect(sortLibrary(list, '', 'recent', ['1', '2']).map((f) => f.name)).toEqual(['Chicken bowl', 'Oats', 'Bagel', 'Apple']);
+      expect(sortLibrary(list, 'a', 'az', []).map((f) => f.name)).toEqual(['Apple', 'Bagel', 'Oats']);
+    });
+    it('picker: favorites, then recent (not repeated), then everything else A–Z', () => {
+      const s = pickerSections(list, '', ['3', '1']);
+      expect([s.favorites, s.recent, s.rest].map((g) => g.map((f) => f.name))).toEqual([['Chicken bowl'], ['Oats'], ['Apple', 'Bagel']]);
+    });
   });
 });

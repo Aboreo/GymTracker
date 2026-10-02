@@ -1,272 +1,302 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { carbsFromRemaining } from '../logic/analytics';
-import { entryTotals, FOOD_CAP, macroMismatch, mealForHour, saveFood, suggestFoods } from '../logic/diet';
-import { MEALS, type Meal, type MealEntry, type SavedFood } from '../shared/types';
+import { useEffect, useMemo, useState } from 'react';
+import { parseISODate, todayISO } from '../logic/dates';
+import { addFood, entryTotals, FOOD_CAP, libraryPrompt, mealForHour, pickerSections, updateFood } from '../logic/diet';
+import { MEALS, type ISODate, type Meal, type MealEntry, type SavedFood } from '../shared/types';
 import { useAppData } from '../state/AppData';
+import { DuplicateDialog, newFoodId, useRecentFoodIds } from './FoodLibrary';
 import { Icon } from './Icon';
-import { Sheet } from './ui';
+import { draftFromFood, draftNumbers, draftToFood, EMPTY_DRAFT, enterToNext, NutritionFields, parseNum, str, type NutritionDraft } from './NutritionFields';
+import { ChoiceDialog, Empty, Sheet } from './ui';
 
 export const MEAL_LABEL: Record<Meal, string> = { breakfast: 'Breakfast', lunch: 'Lunch', dinner: 'Dinner', snacks: 'Snacks' };
 const SERVING_CHIPS = [0.5, 1, 1.5, 2];
 
-const str = (v: number | null | undefined) => (v === null || v === undefined ? '' : String(v));
-/** Parses a typed number; '' → null. Accepts a decimal comma too. */
-const num = (s: string): number | null => {
-  const t = s.trim().replace(',', '.');
-  if (t === '') return null;
-  const n = Number(t);
-  return Number.isFinite(n) && n >= 0 ? n : null;
-};
-const fmt = (n: number | null) => (n === null ? '—' : String(n));
+const fmt = (n: number | null) => (n === null ? '—' : n.toLocaleString());
+
+/** "Add to today", or "Add to Mon, Oct 5" when logging to another day. */
+export function addToLabel(date: ISODate, today: ISODate = todayISO()): string {
+  if (date === today) return 'Add to today';
+  return `Add to ${parseISODate(date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}`;
+}
+
+type Dialog = { kind: 'changed' } | { kind: 'save' } | { kind: 'duplicate'; how: 'update' | 'new'; name: string; suggestion: string } | null;
 
 /**
- * "Item eaten" (per-serving values × servings) or "Quick add" (a typed total). Also edits an
- * existing entry. One day write on save; one saved-items write only if "Save for next time" is on.
+ * "+ Log meal" (a library food or typed-in values × servings) or "Quick add" (a typed total).
+ * Also edits an existing entry. One day write on save; one library write only when the
+ * "Add to today" popup is answered with a library change.
  */
 export function FoodSheet({
   mode,
   entry,
-  recentEntries,
+  date,
+  initialMeal,
   onSave,
   onDelete,
   onClose,
 }: {
-  mode: 'item' | 'quick';
+  mode: 'meal' | 'quick';
   entry?: MealEntry;
-  /** Entries from recent days, for the "recent" suggestions. */
-  recentEntries: MealEntry[];
+  /** The day being logged to (labels the button). */
+  date: ISODate;
+  initialMeal?: Meal;
   onSave: (e: MealEntry) => void;
   onDelete?: () => void;
   onClose: () => void;
 }) {
-  const app = useAppData();
-  const { foods, loadFoods } = app;
+  const { foods, loadFoods, saveFoods } = useAppData();
   useEffect(() => {
-    if (mode === 'item') loadFoods();
+    if (mode === 'meal') loadFoods();
   }, [mode, loadFoods]);
+  const library = Array.isArray(foods) ? foods : null;
 
-  const [name, setName] = useState(entry?.name ?? '');
-  const [kcal, setKcal] = useState(str(entry?.kcalPerServing));
-  const [protein, setProtein] = useState(str(entry?.proteinPerServing));
-  const [fat, setFat] = useState(str(entry?.fatPerServing));
-  const [carbs, setCarbs] = useState(str(entry?.carbsPerServing));
-  // Carbs auto-fill from remaining calories until typed (an existing entry keeps its value).
-  const [carbsTyped, setCarbsTyped] = useState(entry !== undefined);
+  const [draft, setDraft] = useState<NutritionDraft>(() =>
+    entry
+      ? draftFromFood({ name: entry.name, kcal: entry.kcalPerServing, protein: entry.proteinPerServing, fat: entry.fatPerServing, carbs: entry.carbsPerServing })
+      : EMPTY_DRAFT,
+  );
+  const [picked, setPicked] = useState<SavedFood | null>(null);
   const [servings, setServings] = useState(str(entry?.servings ?? 1));
-  const [meal, setMeal] = useState<Meal>(() => entry?.meal ?? mealForHour(new Date().getHours()));
+  const [meal, setMeal] = useState<Meal>(() => entry?.meal ?? initialMeal ?? mealForHour(new Date().getHours()));
   // Identity and time of a new entry, fixed when the sheet opens.
   const [fresh] = useState(() => ({ id: crypto.randomUUID(), at: Date.now() }));
-  const [remember, setRemember] = useState(false);
-  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [picking, setPicking] = useState(false);
+  const [dialog, setDialog] = useState<Dialog>(null);
 
-  const k = num(kcal);
-  const p = num(protein);
-  const f = num(fat);
-  const autoCarbs = k !== null ? carbsFromRemaining(k, p ?? 0, f ?? 0) : null;
-  const c = carbsTyped ? num(carbs) : autoCarbs;
-  const s = mode === 'quick' ? 1 : num(servings);
+  const isMeal = mode === 'meal';
+  const n = draftNumbers(draft);
+  const s = isMeal ? parseNum(servings) : 1;
 
-  const draft: MealEntry = {
+  /** The entry as it would be saved (a snapshot: never linked to the library food's values). */
+  const entryFor = (name: string, foodId: string | undefined): MealEntry => ({
     id: entry?.id ?? fresh.id,
-    kind: entry?.kind ?? mode,
-    name: name.trim() || (mode === 'quick' ? 'Quick add' : 'Item'),
-    // An item always has numbers (blank grams = 0); a quick add keeps blanks as "not entered".
-    kcalPerServing: mode === 'item' ? (k ?? 0) : k,
-    proteinPerServing: mode === 'item' ? (p ?? 0) : p,
-    fatPerServing: mode === 'item' ? (f ?? 0) : f,
-    carbsPerServing: mode === 'item' ? (c ?? 0) : c,
+    kind: entry?.kind ?? (isMeal ? 'item' : 'quick'),
+    ...(foodId ? { foodId } : {}),
+    name: name.trim() || (isMeal ? 'Item' : 'Quick add'),
+    // A meal always has numbers (blank grams = 0); a quick add keeps blanks as "not entered".
+    kcalPerServing: isMeal ? (n.kcal ?? 0) : n.kcal,
+    proteinPerServing: isMeal ? (n.protein ?? 0) : n.protein,
+    fatPerServing: isMeal ? (n.fat ?? 0) : n.fat,
+    carbsPerServing: isMeal ? (n.carbs ?? 0) : n.carbs,
     servings: s ?? 1,
     meal,
     loggedAt: entry?.loggedAt ?? fresh.at,
-  };
-  const total = entryTotals(draft);
-  const mismatch = macroMismatch(k, p ?? 0, f ?? 0, c ?? 0);
-  const valid = mode === 'item' ? k !== null && s !== null && s > 0 : [k, p, f, c].some((v) => v !== null);
+  });
+  const linkedId = picked?.id ?? entry?.foodId;
+  const total = entryTotals(entryFor(draft.name, linkedId));
+  const valid = isMeal ? n.kcal !== null && s !== null && s > 0 : [n.kcal, n.protein, n.fat, n.carbs].some((v) => v !== null);
 
-  const suggestions = useMemo(
-    () => (Array.isArray(foods) && mode === 'item' ? suggestFoods(foods, name, recentEntries, 6) : []),
-    [foods, mode, name, recentEntries],
-  );
-  const pick = (food: SavedFood) => {
-    setName(food.name);
-    setKcal(str(food.kcal));
-    setProtein(str(food.protein));
-    setFat(str(food.fat));
-    setCarbs(str(food.carbs));
-    setCarbsTyped(true);
-    setShowSuggestions(false);
+  const pick = (food: SavedFood | null) => {
+    setPicking(false);
+    if (food) setDraft(draftFromFood(food));
+    else if (picked) setDraft(EMPTY_DRAFT); // "enter manually" after a pick: start blank
+    setPicked(food);
+  };
+
+  /** Saves to the library (update the picked food, or add a new one), then logs the meal. */
+  const saveAndLog = (how: 'update' | 'new', name: string) => {
+    if (!library) return;
+    const input = { ...draftToFood(draft), name };
+    let r = how === 'update' && picked ? updateFood(library, picked.id, input, fresh.at) : addFood(library, input, fresh.at, newFoodId);
+    if (!r.ok && r.reason === 'missing') r = addFood(library, input, fresh.at, newFoodId); // deleted meanwhile
+    if (r.ok) {
+      saveFoods(r.list);
+      onSave(entryFor(r.food.name, r.food.id));
+    } else if (r.reason === 'duplicate') setDialog({ kind: 'duplicate', how, name, suggestion: r.suggestion });
   };
 
   const submit = () => {
     if (!valid) return;
-    onSave(draft);
-    if (remember && Array.isArray(foods) && name.trim()) {
-      app.saveFoods(
-        saveFood(
-          foods,
-          { name: name.trim(), kcal: k ?? 0, protein: p ?? 0, fat: f ?? 0, carbs: c ?? 0 },
-          draft.loggedAt,
-          () => crypto.randomUUID().slice(0, 8),
-        ),
-      );
-    }
+    // Edit mode and quick adds never ask about the library.
+    const ask = entry || !isMeal || !library ? 'none' : libraryPrompt(draftToFood(draft), picked);
+    if (ask === 'none') onSave(entryFor(draft.name, linkedId));
+    else setDialog({ kind: ask });
   };
 
-  const title = entry ? (entry.kind === 'manual' ? 'Edit manual total' : 'Edit entry') : mode === 'quick' ? 'Quick add' : 'Item eaten';
-  const per = mode === 'item' ? ' per serving' : '';
+  const title = entry ? (entry.kind === 'manual' ? 'Edit manual total' : 'Edit entry') : isMeal ? 'Log meal' : 'Quick add';
+  const full = !!library && library.length >= FOOD_CAP;
+  const fullNote = full ? `Your library is full (${FOOD_CAP} foods). Delete one in Plan → Foods to save more.` : undefined;
 
   return (
-    <Sheet title={title} onClose={onClose}>
-      <form
-        className="stack"
-        onSubmit={(e) => {
-          e.preventDefault();
-          submit();
-        }}
-      >
-        <label className="field" style={{ position: 'relative' }}>
-          <span>Name (optional)</span>
-          <input
-            className="input"
-            value={name}
-            placeholder={mode === 'quick' ? 'Quick add' : 'Item'}
-            autoComplete="off"
-            onChange={(e) => {
-              setName(e.target.value);
-              setShowSuggestions(true);
-            }}
-            onFocus={() => setShowSuggestions(true)}
+    <>
+      <Sheet title={title} onClose={onClose}>
+        <form
+          className="stack"
+          style={{ gap: 'var(--space-5)' }}
+          onSubmit={(e) => {
+            e.preventDefault();
+            submit();
+          }}
+        >
+          {isMeal && (
+            <button type="button" className={`input soft picker-field ${picked ? '' : 'empty'}`} onClick={() => setPicking(true)} aria-haspopup="dialog">
+              <Icon name={picked ? 'star' : 'plus'} size={18} filled={picked?.favorite} />
+              <span className="grow">{picked ? picked.name : 'Choose food'}</span>
+              <Icon name="down" size={18} />
+            </button>
+          )}
+
+          <NutritionFields
+            value={draft}
+            onChange={(p) => setDraft((d) => ({ ...d, ...p }))}
+            nameLabel={isMeal ? 'Name' : 'Name (optional)'}
+            namePlaceholder={isMeal ? 'e.g. Protein bar' : 'Quick add'}
+            caption={isMeal ? 'Per 1 serving' : undefined}
+            showServingNote={isMeal && !entry}
           />
-        </label>
-        {showSuggestions && suggestions.length > 0 && (
-          <div className="suggestions" role="listbox" aria-label="Saved items">
-            <span className="label">{name.trim() ? 'Saved items' : 'Recent'}</span>
-            {suggestions.map((food) => (
-              <button type="button" role="option" aria-selected={false} key={food.id} className="list-item" onClick={() => pick(food)}>
-                {food.favorite && <Icon name="star" size={14} />}
-                <span className="grow">{food.name}</span>
-                <span className="xs muted">
-                  {food.kcal} kcal · P {food.protein} · F {food.fat} · C {food.carbs}
-                </span>
+
+          {isMeal && (
+            <>
+              <hr className="divider" />
+              <div className="nf-field">
+                <span className="nf-label">Servings (×)</span>
+                <div className="row wrap">
+                  <div className="row" style={{ gap: 'var(--space-1)' }}>
+                    <button type="button" className="btn icon" aria-label="Fewer servings" onClick={() => setServings(String(Math.max(0.25, Math.round(((s ?? 1) - 0.5) * 100) / 100)))}>
+                      <Icon name="minus" />
+                    </button>
+                    <input
+                      className="input soft num"
+                      style={{ width: 72, textAlign: 'center' }}
+                      type="text"
+                      inputMode="decimal"
+                      value={servings}
+                      aria-label="Servings"
+                      enterKeyHint="done"
+                      data-next
+                      onKeyDown={enterToNext}
+                      onChange={(e) => setServings(e.target.value)}
+                    />
+                    <button type="button" className="btn icon" aria-label="More servings" onClick={() => setServings(String(Math.round(((s ?? 0) + 0.5) * 100) / 100))}>
+                      <Icon name="plus" />
+                    </button>
+                  </div>
+                  <div className="segmented" role="group" aria-label="Quick servings">
+                    {SERVING_CHIPS.map((x) => (
+                      <button type="button" key={x} aria-pressed={s === x} onClick={() => setServings(String(x))}>
+                        {x}×
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+
+          <div className="segmented" role="group" aria-label="Meal" style={{ alignSelf: 'flex-start', maxWidth: '100%', overflowX: 'auto' }}>
+            {MEALS.map((m) => (
+              <button type="button" key={m} aria-pressed={meal === m} onClick={() => setMeal(m)}>
+                {MEAL_LABEL[m]}
               </button>
             ))}
           </div>
-        )}
 
-        <div className="grid cols-2 macro-fields">
-          <MacroField label={`Calories${per}`} unit="kcal" value={kcal} onChange={setKcal} />
-          <MacroField label={`Protein${per}`} unit="g" value={protein} onChange={setProtein} />
-          <MacroField label={`Fat${per}`} unit="g" value={fat} onChange={setFat} />
-          <MacroField
-            label={`Carbs${per}`}
-            unit="g"
-            value={carbsTyped ? carbs : str(autoCarbs)}
-            onChange={(v) => {
-              setCarbs(v);
-              setCarbsTyped(true);
-            }}
-            hint={
-              carbsTyped ? (
-                <button type="button" className="btn sm ghost" style={{ minHeight: 0, padding: 0 }} onClick={() => setCarbsTyped(false)}>
-                  Auto
-                </button>
-              ) : (
-                <span className="xs muted">auto from remaining kcal</span>
-              )
-            }
-          />
-        </div>
+          {isMeal && (
+            <p className="small preview-total" aria-live="polite">
+              <strong>
+                {fmt(total.kcal)} kcal · {fmt(total.protein)} g P · {fmt(total.fat)} g F · {fmt(total.carbs)} g C
+              </strong>
+            </p>
+          )}
 
-        {mismatch && (
-          <p className="small badge caution" role="status" style={{ whiteSpace: 'normal' }}>
-            These macros add up to ~{mismatch.fromMacros.toLocaleString()} kcal, but you entered {k?.toLocaleString()}. Double-check for a typo.
-          </p>
-        )}
-
-        {mode === 'item' && (
-          <div className="field">
-            <span>Servings (×)</span>
-            <div className="row wrap">
-              <button type="button" className="btn icon" aria-label="Fewer servings" onClick={() => setServings(String(Math.max(0.25, Math.round(((s ?? 1) - 0.5) * 100) / 100)))}>
-                <Icon name="minus" />
-              </button>
-              <input
-                className="input num"
-                style={{ width: 80 }}
-                type="text"
-                inputMode="decimal"
-                value={servings}
-                aria-label="Servings"
-                onChange={(e) => setServings(e.target.value)}
-              />
-              <button type="button" className="btn icon" aria-label="More servings" onClick={() => setServings(String(Math.round(((s ?? 0) + 0.5) * 100) / 100))}>
-                <Icon name="plus" />
-              </button>
-              <div className="segmented" role="group" aria-label="Quick servings">
-                {SERVING_CHIPS.map((x) => (
-                  <button type="button" key={x} aria-pressed={s === x} onClick={() => setServings(String(x))}>
-                    {x}×
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-
-        <div className="segmented" role="group" aria-label="Meal" style={{ alignSelf: 'flex-start', maxWidth: '100%', overflowX: 'auto' }}>
-          {MEALS.map((m) => (
-            <button type="button" key={m} aria-pressed={meal === m} onClick={() => setMeal(m)}>
-              {MEAL_LABEL[m]}
-            </button>
-          ))}
-        </div>
-
-        {mode === 'item' && !entry && (
-          <label className="check">
-            <input type="checkbox" checked={remember} disabled={!Array.isArray(foods) || !name.trim()} onChange={(e) => setRemember(e.target.checked)} />
-            <span>
-              Save for next time
-              <span className="xs muted" style={{ display: 'block' }}>
-                {foods === 'error'
-                  ? 'Saved items can’t be loaded right now (offline?).'
-                  : !name.trim()
-                    ? 'Give it a name to save it.'
-                    : Array.isArray(foods) && foods.length >= FOOD_CAP * 0.9
-                      ? `${foods.length} of ${FOOD_CAP} saved items: the least recently used ones (not starred) will be removed.`
-                      : 'Shows up as a suggestion when you type its name.'}
-              </span>
-            </span>
-          </label>
-        )}
-
-        <p className="small preview-total" aria-live="polite">
-          {mode === 'item' ? 'Adds ' : 'Total '}
-          <strong>
-            {fmt(total.kcal)} kcal · {fmt(total.protein)} g protein · {fmt(total.fat)} g fat · {fmt(total.carbs)} g carbs
-          </strong>
-        </p>
-
-        <button className="btn primary block lg" disabled={!valid}>
-          {entry ? 'Save' : 'Add'}
-        </button>
-        {onDelete && (
-          <button type="button" className="btn ghost danger" onClick={onDelete}>
-            <Icon name="trash" size={18} /> Delete entry
+          <button className="btn primary block lg" disabled={!valid}>
+            {entry ? 'Save changes' : addToLabel(date)}
           </button>
-        )}
-      </form>
-    </Sheet>
+          {onDelete && (
+            <button type="button" className="btn ghost danger" onClick={onDelete}>
+              <Icon name="trash" size={18} /> Delete entry
+            </button>
+          )}
+        </form>
+      </Sheet>
+
+      {picking && <FoodPicker onPick={pick} onClose={() => setPicking(false)} />}
+
+      {dialog?.kind === 'changed' && picked && (
+        <ChoiceDialog
+          title="You changed this food’s details"
+          message={fullNote ?? 'The meal is added either way. This only decides what happens to your library.'}
+          choices={[
+            { label: `Update “${picked.name}” in library`, primary: true, onClick: () => saveAndLog('update', draft.name.trim()) },
+            { label: 'Save as new food', disabled: full, onClick: () => saveAndLog('new', draft.name.trim()) },
+            { label: 'Just this once', onClick: () => onSave(entryFor(draft.name, picked.id)) },
+          ]}
+          onCancel={() => setDialog(null)}
+        />
+      )}
+      {dialog?.kind === 'save' && (
+        <ChoiceDialog
+          title="Save this to your library?"
+          message={fullNote ?? `Next time, pick “${draft.name.trim()}” instead of typing it in.`}
+          choices={[
+            { label: 'Save to library', primary: true, disabled: full, onClick: () => saveAndLog('new', draft.name.trim()) },
+            { label: 'Not now', onClick: () => onSave(entryFor(draft.name, undefined)) },
+          ]}
+          onCancel={() => setDialog(null)}
+        />
+      )}
+      {dialog?.kind === 'duplicate' && (
+        <DuplicateDialog
+          name={dialog.name}
+          suggestion={dialog.suggestion}
+          onSaveAs={() => saveAndLog(dialog.how, dialog.suggestion)}
+          onCancel={() => setDialog(null)}
+        />
+      )}
+    </>
   );
 }
 
-function MacroField({ label, unit, value, onChange, hint }: { label: string; unit: string; value: string; onChange: (v: string) => void; hint?: ReactNode }) {
+/** Searchable list of library foods: favorites, then recent, then everything else. */
+function FoodPicker({ onPick, onClose }: { onPick: (f: SavedFood | null) => void; onClose: () => void }) {
+  const { foods } = useAppData();
+  const recentIds = useRecentFoodIds();
+  const [query, setQuery] = useState('');
+  const sections = useMemo(() => (Array.isArray(foods) ? pickerSections(foods, query, recentIds) : null), [foods, query, recentIds]);
+
   return (
-    <label className="field">
-      <span>
-        {label} <span className="muted">({unit})</span>
-      </span>
-      <input className="input num" type="text" inputMode="decimal" value={value} placeholder="0" onChange={(e) => onChange(e.target.value)} />
-      {hint}
-    </label>
+    <Sheet title="Choose food" onClose={onClose}>
+      <input className="input soft" type="search" value={query} placeholder="Search your library" aria-label="Search your library" onChange={(e) => setQuery(e.target.value)} />
+      <button className="list-item" style={{ color: 'var(--accent)', fontWeight: 600 }} onClick={() => onPick(null)}>
+        <Icon name="plus" size={18} />
+        <span className="grow">Not in my library, enter manually</span>
+      </button>
+      {foods === null ? (
+        <p className="small muted">Loading…</p>
+      ) : foods === 'error' || !sections ? (
+        <p className="small muted">Your food library can’t be loaded right now (offline?). You can still enter the details manually.</p>
+      ) : foods.length === 0 ? (
+        <Empty>Your library is empty. Foods you save (or add in Plan → Foods) show up here.</Empty>
+      ) : (
+        <div className="stack picker-list" style={{ gap: 'var(--space-3)' }}>
+          {(
+            [
+              ['Favorites', sections.favorites],
+              ['Recent', sections.recent],
+              [sections.favorites.length || sections.recent.length ? 'All foods' : 'Foods', sections.rest],
+            ] as const
+          )
+            .filter(([, list]) => list.length > 0)
+            .map(([label, list]) => (
+              <div key={label} className="stack" style={{ gap: 0 }}>
+                <span className="label">{label}</span>
+                <div className="list">
+                  {list.map((f) => (
+                    <button key={f.id} className="list-item" onClick={() => onPick(f)}>
+                      {f.favorite && <Icon name="star" size={14} filled />}
+                      <span className="grow stack" style={{ gap: 0 }}>
+                        <span>{f.name}</span>
+                        {f.servingNote && <span className="xs muted">{f.servingNote}</span>}
+                      </span>
+                      <span className="small muted">{f.kcal} kcal</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          {sections.favorites.length + sections.recent.length + sections.rest.length === 0 && <p className="small muted">No food matches “{query.trim()}”.</p>}
+        </div>
+      )}
+    </Sheet>
   );
 }

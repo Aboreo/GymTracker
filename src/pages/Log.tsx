@@ -1,11 +1,12 @@
 import { useMemo, useState } from 'react';
+import { FoodEditorSheet } from '../components/FoodLibrary';
 import { FoodSheet, MEAL_LABEL } from '../components/FoodSheet';
 import { Icon } from '../components/Icon';
-import { BackToToday, DateNav, Empty, Explainer, NumberInput, ProgressBar, SubNav } from '../components/ui';
+import { BackToToday, DateNav, Empty, Explainer, Link, NumberInput, ProgressBar, SubNav, Toast } from '../components/ui';
 import { calorieSuggestion, carbsFromRemaining, minStatus, rangeStatus, rollingAverage, weeklyBodyweight, weeklyRate, type Status } from '../logic/analytics';
-import { addDays, formatShortDate } from '../logic/dates';
+import { formatShortDate } from '../logic/dates';
 import { dayEntries, entryTotals, removeEntry, upsertEntry } from '../logic/diet';
-import { MEALS, type MealEntry } from '../shared/types';
+import { MEALS, type Meal, type MealEntry } from '../shared/types';
 import { useLocation } from '../router';
 import { emptyDay, useAppData, useSelectedDate } from '../state/AppData';
 
@@ -52,21 +53,21 @@ function MacroRow({ label, unit, value, target, status, max }: { label: string; 
   );
 }
 
-type Editing = { mode: 'item' | 'quick'; entry?: MealEntry } | null;
+type Editing = { mode: 'meal' | 'quick'; entry?: MealEntry; meal?: Meal } | 'add-food' | null;
 
 function DietLog() {
   const { days, selectedDate, saveDay, settings } = useAppData();
-  const [editing, setEditing] = useState<Editing>(null);
+  const [editing, setEditingState] = useState<Editing>(null);
+  // "Added · Add another" after logging; opening any sheet dismisses it.
+  const [added, setAdded] = useState<{ meal: Meal; n: number } | null>(null);
+  const setEditing = (e: Editing) => {
+    if (e) setAdded(null);
+    setEditingState(e);
+  };
   const t = settings.nutrition;
   const day = days.get(selectedDate) ?? emptyDay(selectedDate);
   const entries = dayEntries(day);
   const carbTarget = carbsFromRemaining(t.kcalTarget, (t.proteinMin + t.proteinMax) / 2, (t.fatMin + t.fatMax) / 2);
-
-  // Entries from the last few weeks (already in memory) drive the "recent" suggestions.
-  const recentEntries = useMemo(() => {
-    const from = addDays(selectedDate, -30);
-    return [...days.values()].filter((d) => d.date >= from).flatMap((d) => d.entries ?? []);
-  }, [days, selectedDate]);
 
   const groups = [
     { key: 'manual', label: 'Earlier total', items: entries.filter((e) => e.kind === 'manual') },
@@ -87,12 +88,20 @@ function DietLog() {
 
       <section className="card">
         <div className="row wrap">
-          <button className="btn primary grow" onClick={() => setEditing({ mode: 'item' })}>
-            <Icon name="plus" size={18} /> Item eaten
+          <button className="btn primary grow" onClick={() => setEditing({ mode: 'meal' })}>
+            <Icon name="plus" size={18} /> Log meal
           </button>
-          <button className="btn" onClick={() => setEditing({ mode: 'quick' })}>
+          <button className="btn grow" onClick={() => setEditing('add-food')}>
+            Add food
+          </button>
+        </div>
+        <div className="row spread">
+          <button className="btn sm ghost" onClick={() => setEditing({ mode: 'quick' })}>
             Quick add
           </button>
+          <Link to="/plan/foods" className="btn sm ghost">
+            Food library <Icon name="right" size={16} />
+          </Link>
         </div>
         {groups.length === 0 ? (
           <Empty>Nothing logged for this day yet.</Empty>
@@ -104,7 +113,7 @@ function DietLog() {
                 {g.items.map((e) => {
                   const tot = entryTotals(e);
                   return (
-                    <button key={e.id} className="list-item" onClick={() => setEditing({ mode: e.kind === 'item' ? 'item' : 'quick', entry: e })}>
+                    <button key={e.id} className="list-item" onClick={() => setEditing({ mode: e.kind === 'item' ? 'meal' : 'quick', entry: e })}>
                       <span className="grow stack" style={{ gap: 0 }}>
                         <span>{e.name}</span>
                         <span className="xs muted">
@@ -126,16 +135,19 @@ function DietLog() {
         )}
       </section>
 
-      {editing && (
+      {editing === 'add-food' && <FoodEditorSheet onClose={() => setEditing(null)} />}
+      {editing && editing !== 'add-food' && (
         <FoodSheet
           key={editing.entry?.id ?? editing.mode}
           mode={editing.mode}
           entry={editing.entry}
-          recentEntries={recentEntries}
+          date={selectedDate}
+          initialMeal={editing.meal}
           onClose={() => setEditing(null)}
           onSave={(e) => {
             saveDay(upsertEntry(day, e));
             setEditing(null);
+            if (!editing.entry) setAdded((a) => ({ meal: e.meal, n: (a?.n ?? 0) + 1 }));
           }}
           onDelete={
             editing.entry
@@ -145,6 +157,14 @@ function DietLog() {
                 }
               : undefined
           }
+        />
+      )}
+      {added && (
+        <Toast
+          key={added.n}
+          message="Added"
+          action={{ label: 'Add another', onClick: () => setEditing({ mode: 'meal', meal: added.meal }) }}
+          onDone={() => setAdded(null)}
         />
       )}
     </div>

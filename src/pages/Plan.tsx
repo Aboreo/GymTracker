@@ -1,3 +1,4 @@
+import { FoodLibrary } from '../components/FoodLibrary';
 import { ExerciseLibrary, WeeklySplitEditor, WorkoutsEditor } from '../components/SplitEditor';
 import { Num, Section, SubNav } from '../components/ui';
 import { useLocation } from '../router';
@@ -16,12 +17,17 @@ export function Plan() {
         items={[
           { sub: 'workouts', label: 'Workouts' },
           { sub: 'library', label: 'Exercises' },
+          { sub: 'foods', label: 'Foods' },
           { sub: 'nutrition', label: 'Nutrition' },
         ]}
       />
       {sub === 'library' ? (
         <Section title="Exercise library" subtitle="Rest type picks the default rest (Settings → Rest timings).">
           <ExerciseLibrary />
+        </Section>
+      ) : sub === 'foods' ? (
+        <Section title="Food library" subtitle="Foods you eat often, with values per serving. Pick them in Log → Diet → Log meal.">
+          <FoodLibrary />
         </Section>
       ) : sub === 'nutrition' ? (
         <NutritionTargetsEditor />

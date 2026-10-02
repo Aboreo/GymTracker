@@ -9,7 +9,7 @@ export type Route = (typeof ROUTES)[number];
 /** Sub-sections of routes that have a segmented control. The first one is the default. */
 export const SUBS = {
   log: ['diet', 'weight'],
-  plan: ['workouts', 'library', 'nutrition'],
+  plan: ['workouts', 'library', 'foods', 'nutrition'],
   settings: ['account', 'rest', 'prefs', 'data'],
 } as const satisfies Partial<Record<Route, readonly string[]>>;
 

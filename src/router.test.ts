@@ -14,6 +14,7 @@ describe('parseHash', () => {
     expect(parseHash('#/nope').route).toBe('today');
     expect(parseHash('#/log').sub).toBe('diet');
     expect(parseHash('#/plan/bogus').sub).toBe('workouts');
+    expect(parseHash('#/plan/foods').sub).toBe('foods');
     expect(parseHash('#/settings').sub).toBe('account');
     expect(parseHash('#/workout?review').sub).toBeNull();
   });

@@ -6,12 +6,24 @@ import type { Status } from '../logic/analytics';
 import type { ISODate } from '../shared/types';
 import { Icon } from './Icon';
 
+// Open sheets, newest last: Escape only closes the top one (a dialog over a sheet).
+const openSheets: object[] = [];
+
 export function Sheet({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
+  const close = useRef(onClose);
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    close.current = onClose;
+  });
+  useEffect(() => {
+    const me = {};
+    openSheets.push(me);
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && openSheets.at(-1) === me && close.current();
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      openSheets.splice(openSheets.indexOf(me), 1);
+    };
+  }, []);
   return (
     <div className="backdrop" onClick={onClose}>
       <div className="sheet" role="dialog" aria-modal="true" aria-label={title} onClick={(e) => e.stopPropagation()}>
@@ -55,6 +67,58 @@ export function Confirm({
         </button>
       </div>
     </Sheet>
+  );
+}
+
+/** A dialog with a few stacked choices and Cancel (tapping outside or Escape also cancels). */
+export function ChoiceDialog({
+  title,
+  message,
+  choices,
+  onCancel,
+}: {
+  title: string;
+  message?: ReactNode;
+  choices: { label: string; primary?: boolean; disabled?: boolean; onClick: () => void }[];
+  onCancel: () => void;
+}) {
+  return (
+    <Sheet title={title} onClose={onCancel}>
+      {message && <div className="small muted">{message}</div>}
+      <div className="stack" style={{ gap: 'var(--space-2)' }}>
+        {choices.map((c) => (
+          <button key={c.label} className={`btn block ${c.primary ? 'primary' : ''}`} disabled={c.disabled} onClick={c.onClick}>
+            {c.label}
+          </button>
+        ))}
+        <button className="btn block ghost" onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
+    </Sheet>
+  );
+}
+
+/** A small message at the bottom that goes away on its own, with an optional action. */
+export function Toast({ message, action, onDone }: { message: string; action?: { label: string; onClick: () => void }; onDone: () => void }) {
+  const done = useRef(onDone);
+  useEffect(() => {
+    done.current = onDone;
+  });
+  useEffect(() => {
+    const id = window.setTimeout(() => done.current(), 5000);
+    return () => window.clearTimeout(id);
+  }, [message]);
+  return (
+    <div className="toast" role="status">
+      <Icon name="check" size={18} />
+      <span className="grow">{message}</span>
+      {action && (
+        <button className="btn sm ghost" onClick={action.onClick}>
+          {action.label}
+        </button>
+      )}
+    </div>
   );
 }
 

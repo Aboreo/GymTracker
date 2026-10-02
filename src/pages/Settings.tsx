@@ -1,8 +1,8 @@
 import { EmailAuthProvider, reauthenticateWithCredential, signOut, updatePassword } from 'firebase/auth';
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent } from 'react';
 import * as api from '../api';
 import { Icon } from '../components/Icon';
-import { Confirm, Empty, Num, Section, SubNav } from '../components/ui';
+import { Confirm, Link, Num, Section, SubNav } from '../components/ui';
 import { generateSampleData } from '../data/sampleData';
 import { auth } from '../firebase';
 import { getTheme, setTheme, type Theme } from '../lib/theme';
@@ -10,8 +10,8 @@ import { nutritionCsv, parseBackup, saveFile, weightCsv, workoutsCsv } from '../
 import { todayISO } from '../logic/dates';
 import { convertAllData } from '../logic/units';
 import { useLocation } from '../router';
-import { FOOD_CAP } from '../logic/diet';
-import type { ExportFile, RestType, SavedFood, Settings as SettingsT, Units } from '../shared/types';
+import { normalizeFoods } from '../logic/diet';
+import type { ExportFile, RestType, Settings as SettingsT, Units } from '../shared/types';
 import { useAppData } from '../state/AppData';
 
 type Pending =
@@ -246,7 +246,7 @@ function Preferences({ onMessage }: { onMessage: (m: string) => void }) {
         </div>
       </Section>
 
-      <SavedItems />
+      <FoodLibraryLink />
 
       {pendingUnits && (
         <Confirm
@@ -261,72 +261,13 @@ function Preferences({ onMessage }: { onMessage: (m: string) => void }) {
   );
 }
 
-function SavedItems() {
-  const { foods, loadFoods, saveFoods } = useAppData();
-  useEffect(() => loadFoods(), [loadFoods]);
-  const list = Array.isArray(foods) ? [...foods].sort((a, b) => Number(!!b.favorite) - Number(!!a.favorite) || a.name.localeCompare(b.name)) : [];
-  const update = (id: string, patch: Partial<SavedFood>) => Array.isArray(foods) && saveFoods(foods.map((f) => (f.id === id ? { ...f, ...patch } : f)));
-
+function FoodLibraryLink() {
   return (
-    <Section title="Saved items" subtitle="Items you chose to “Save for next time” when logging. Past entries never change when you edit these.">
-      {foods === null ? (
-        <p className="small muted">Loading…</p>
-      ) : foods === 'error' ? (
-        <p className="small muted">Saved items can’t be loaded right now (offline?).</p>
-      ) : list.length === 0 ? (
-        <Empty>Nothing saved yet. Turn on “Save for next time” when logging an item.</Empty>
-      ) : (
-        <>
-          <p className={`xs ${list.length >= FOOD_CAP * 0.9 ? '' : 'muted'}`} style={{ color: list.length >= FOOD_CAP * 0.9 ? 'var(--caution)' : undefined }}>
-            {list.length} of {FOOD_CAP}. When full, the least recently used items that aren’t starred are removed.
-          </p>
-          <div className="list">
-            {list.map((f) => (
-              <div key={f.id} className="list-item">
-                <button
-                  className="btn icon ghost"
-                  aria-label={f.favorite ? `Unstar ${f.name}` : `Star ${f.name}`}
-                  aria-pressed={!!f.favorite}
-                  style={{ color: f.favorite ? 'var(--accent)' : 'var(--text-muted)' }}
-                  onClick={() => update(f.id, { favorite: !f.favorite })}
-                >
-                  <Icon name="star" size={20} filled={!!f.favorite} />
-                </button>
-                <div className="grow stack" style={{ gap: 2 }}>
-                  <RenameInput value={f.name} onCommit={(name) => update(f.id, { name })} />
-                  <span className="xs muted">
-                    {f.kcal} kcal · P {f.protein} · F {f.fat} · C {f.carbs}
-                  </span>
-                </div>
-                <button className="btn icon ghost danger" aria-label={`Delete ${f.name}`} onClick={() => saveFoods(foods.filter((x) => x.id !== f.id))}>
-                  <Icon name="trash" size={20} />
-                </button>
-              </div>
-            ))}
-          </div>
-        </>
-      )}
+    <Section title="Food library" subtitle="Foods you log often, with values per serving.">
+      <Link to="/plan/foods" className="btn" style={{ alignSelf: 'flex-start' }}>
+        Open food library <Icon name="right" size={16} />
+      </Link>
     </Section>
-  );
-}
-
-/** Text input that only saves on blur/Enter (one write per rename, not per keystroke). */
-function RenameInput({ value, onCommit }: { value: string; onCommit: (v: string) => void }) {
-  const [text, setText] = useState(value);
-  const commit = () => {
-    const t = text.trim();
-    if (t && t !== value) onCommit(t);
-    else setText(value);
-  };
-  return (
-    <input
-      className="input"
-      value={text}
-      aria-label="Item name"
-      onChange={(e) => setText(e.target.value)}
-      onBlur={commit}
-      onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
-    />
   );
 }
 
@@ -394,7 +335,7 @@ function DataBackup({ onMessage }: { onMessage: (m: string) => void }) {
     if (!pending) return;
     if (pending.kind === 'import') {
       void api.importAll(uid, pending.file);
-      if (pending.file.foods) app.saveFoods(pending.file.foods);
+      if (pending.file.foods) app.saveFoods(normalizeFoods(pending.file.foods).foods);
       onMessage(`Restored ${pending.file.days.length} days and ${pending.file.sessions.length} workouts.`);
     } else if (pending.kind === 'sample-overwrite') {
       loadSample();

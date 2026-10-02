@@ -167,7 +167,7 @@ export type Meal = (typeof MEALS)[number];
 
 /**
  * One thing eaten, stored inside its day document. Values are a snapshot (never linked to a
- * saved item), so editing or deleting a saved item never changes past days.
+ * library food), so editing or deleting a library food never changes past days.
  * item = per-serving values × servings; quick = a typed total (servings 1);
  * manual = a day's total from before entries existed, preserved as one entry.
  * A null macro means "not entered" (only on quick/manual entries).
@@ -175,6 +175,8 @@ export type Meal = (typeof MEALS)[number];
 export interface MealEntry {
   id: string;
   kind: 'item' | 'quick' | 'manual';
+  /** The library food it was logged from, if any. Only used to order "Recent" foods. */
+  foodId?: string;
   name: string;
   kcalPerServing: number | null;
   proteinPerServing: number | null;
@@ -185,7 +187,7 @@ export interface MealEntry {
   loggedAt: number;
 }
 
-/** A remembered item ("Save for next time"). All of them live in one document. */
+/** A food in the library, with per-serving values. The whole library lives in one document. */
 export interface SavedFood {
   id: string;
   name: string;
@@ -193,9 +195,11 @@ export interface SavedFood {
   protein: number;
   fat: number;
   carbs: number;
+  /** e.g. "1 bar", "100 g". */
   servingNote?: string;
+  /** When it was added or last saved (logging it doesn't write here; see recentFoodIds). */
   lastUsedAt: number;
-  favorite?: boolean;
+  favorite: boolean;
 }
 
 export interface DayEntry {
@@ -267,6 +271,6 @@ export interface ExportFile {
   settings: Settings;
   days: DayEntry[];
   sessions: WorkoutSession[];
-  /** Saved items. Missing in backups made before saved items existed. */
+  /** Food library. Missing in backups made before it existed. */
   foods?: SavedFood[];
 }

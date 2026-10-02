@@ -97,53 +97,160 @@ export function mealForHour(hour: number): Meal {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Saved items (one document, capped)
+// Food library (one document, capped; never evicts)
 
-export const FOOD_CAP = 300;
+export const FOOD_CAP = 500;
+/** From here on the library shows a gentle "getting full" notice. */
+export const FOOD_NOTICE_AT = 450;
 
-/**
- * Save or update an item (matched by id, else by name ignoring case). Over the cap, the least
- * recently used non-favorites are evicted.
- */
-export function saveFood(list: SavedFood[], food: Omit<SavedFood, 'id' | 'lastUsedAt'> & { id?: string }, now: number, newId: () => string): SavedFood[] {
-  const key = food.name.trim().toLowerCase();
-  const existing = list.find((f) => (food.id && f.id === food.id) || f.name.trim().toLowerCase() === key);
-  const saved: SavedFood = { ...existing, ...food, id: existing?.id ?? food.id ?? newId(), lastUsedAt: now };
-  const next = existing ? list.map((f) => (f.id === existing.id ? saved : f)) : [...list, saved];
-  return evict(next);
+/** The per-serving values that define a food (everything the user edits). */
+export type FoodInput = Pick<SavedFood, 'name' | 'kcal' | 'protein' | 'fat' | 'carbs' | 'servingNote'>;
+
+export type FoodResult =
+  | { ok: true; list: SavedFood[]; food: SavedFood }
+  | { ok: false; reason: 'duplicate'; existing: SavedFood; suggestion: string }
+  | { ok: false; reason: 'full' }
+  | { ok: false; reason: 'missing' };
+
+const nameKey = (name: string) => name.trim().toLowerCase();
+
+export function findByName(list: SavedFood[], name: string, exceptId?: string): SavedFood | undefined {
+  const key = nameKey(name);
+  return list.find((f) => f.id !== exceptId && nameKey(f.name) === key);
 }
 
-function evict(list: SavedFood[]): SavedFood[] {
-  if (list.length <= FOOD_CAP) return list;
-  const removable = list.filter((f) => !f.favorite).sort((a, b) => a.lastUsedAt - b.lastUsedAt);
-  const drop = new Set(removable.slice(0, list.length - FOOD_CAP).map((f) => f.id));
-  return list.filter((f) => !drop.has(f.id));
-}
-
-/**
- * Suggestions while typing: with no query, recently eaten saved items (from the logged entries,
- * newest first, so using an item costs no write); with a query, name matches (prefix first).
- */
-export function suggestFoods(list: SavedFood[], query: string, recentEntries: MealEntry[], limit = 10): SavedFood[] {
-  const q = query.trim().toLowerCase();
-  if (!q) {
-    const byName = new Map(list.map((f) => [f.name.trim().toLowerCase(), f]));
-    const seen = new Set<string>();
-    const out: SavedFood[] = [];
-    for (const e of [...recentEntries].sort((a, b) => b.loggedAt - a.loggedAt)) {
-      const f = byName.get(e.name.trim().toLowerCase());
-      if (f && !seen.has(f.id)) {
-        seen.add(f.id);
-        out.push(f);
-      }
-    }
-    // Then favorites and recently saved ones that haven't been eaten lately.
-    for (const f of [...list].sort((a, b) => Number(!!b.favorite) - Number(!!a.favorite) || b.lastUsedAt - a.lastUsedAt)) {
-      if (!seen.has(f.id)) out.push(f);
-    }
-    return out.slice(0, limit);
+/** "Name (2)", "Name (3)", … : the first one not already in the library. */
+export function uniqueName(list: SavedFood[], name: string): string {
+  const base = name.trim().replace(/ \(\d+\)$/, '');
+  for (let n = 2; ; n++) {
+    const candidate = `${base} (${n})`;
+    if (!findByName(list, candidate)) return candidate;
   }
-  const matches = list.filter((f) => f.name.toLowerCase().includes(q));
-  const starts = (f: SavedFood) => f.name.toLowerCase().startsWith(q);
-  return matches.sort((a, b) => Number(starts(b)) - Number(starts(a)) || Number(!!b.favorite) - Number(!!a.favorite) || b.lastUsedAt - a.lastUsedAt).slice(0, limit);
+}
+
+function clean(input: FoodInput): FoodInput {
+  const note = input.servingNote?.trim();
+  return { name: input.name.trim(), kcal: input.kcal, protein: input.protein, fat: input.fat, carbs: input.carbs, ...(note ? { servingNote: note } : {}) };
+}
+
+/** Adds a food. Refuses a name already in the library (case-insensitive) and a full library. */
+export function addFood(list: SavedFood[], input: FoodInput, now: number, newId: () => string): FoodResult {
+  if (list.length >= FOOD_CAP) return { ok: false, reason: 'full' };
+  const existing = findByName(list, input.name);
+  if (existing) return { ok: false, reason: 'duplicate', existing, suggestion: uniqueName(list, input.name) };
+  const food: SavedFood = { ...clean(input), id: newId(), favorite: false, lastUsedAt: now };
+  return { ok: true, list: [...list, food], food };
+}
+
+/** Overwrites a food's values (keeps its id and favorite). Refuses renaming onto another food's name. */
+export function updateFood(list: SavedFood[], id: string, input: FoodInput, now: number): FoodResult {
+  const current = list.find((f) => f.id === id);
+  if (!current) return { ok: false, reason: 'missing' };
+  const existing = findByName(list, input.name, id);
+  if (existing) return { ok: false, reason: 'duplicate', existing, suggestion: uniqueName(list, input.name) };
+  const food: SavedFood = { id, favorite: current.favorite, ...clean(input), lastUsedAt: now };
+  return { ok: true, list: list.map((f) => (f.id === id ? food : f)), food };
+}
+
+/**
+ * Migration and repair on load: the library lives in the same document the old "saved items"
+ * used, so this upgrades it in place: fills in missing fields, drops unusable rows and merges
+ * same-name duplicates (keeping the most recently used values, starred if either was).
+ * `changed` says whether the cleaned list needs writing back.
+ */
+export function normalizeFoods(raw: unknown): { foods: SavedFood[]; changed: boolean } {
+  const items = Array.isArray(raw) ? (raw as Partial<SavedFood>[]) : [];
+  const n = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : 0);
+  const byName = new Map<string, SavedFood>();
+  items.forEach((f, i) => {
+    if (!f || typeof f.name !== 'string' || !f.name.trim()) return;
+    const food: SavedFood = {
+      id: typeof f.id === 'string' && f.id ? f.id : `migrated-${i}`,
+      name: f.name.trim(),
+      kcal: n(f.kcal),
+      protein: n(f.protein),
+      fat: n(f.fat),
+      carbs: n(f.carbs),
+      ...(typeof f.servingNote === 'string' && f.servingNote.trim() ? { servingNote: f.servingNote.trim() } : {}),
+      favorite: f.favorite === true,
+      lastUsedAt: n(f.lastUsedAt),
+    };
+    const key = nameKey(food.name);
+    const prev = byName.get(key);
+    if (!prev) byName.set(key, food);
+    else {
+      const newer = food.lastUsedAt > prev.lastUsedAt ? food : prev;
+      byName.set(key, { ...newer, favorite: prev.favorite || food.favorite });
+    }
+  });
+  const foods = [...byName.values()];
+  const fields = ['id', 'name', 'kcal', 'protein', 'fat', 'carbs', 'servingNote', 'favorite', 'lastUsedAt'] as const;
+  const changed = foods.length !== items.length || foods.some((f, i) => fields.some((k) => f[k] !== items[i][k]));
+  return { foods, changed };
+}
+
+/**
+ * Foods ordered by when they were last logged, newest first. Worked out from the entries already
+ * in memory (by foodId, or by name for entries logged before foodId existed), so logging a food
+ * costs no extra write.
+ */
+export function recentFoodIds(list: SavedFood[], entries: MealEntry[]): string[] {
+  const ids = new Set(list.map((f) => f.id));
+  const byName = new Map(list.map((f) => [nameKey(f.name), f.id]));
+  const out = new Set<string>();
+  for (const e of [...entries].sort((a, b) => b.loggedAt - a.loggedAt)) {
+    const id = e.foodId && ids.has(e.foodId) ? e.foodId : byName.get(nameKey(e.name));
+    if (id) out.add(id);
+  }
+  return [...out];
+}
+
+const matches = (f: SavedFood, q: string) => f.name.toLowerCase().includes(q) || !!f.servingNote?.toLowerCase().includes(q);
+
+/** The library list: search, starred first, then A–Z or most recently logged. */
+export function sortLibrary(list: SavedFood[], query: string, order: 'az' | 'recent', recentIds: string[]): SavedFood[] {
+  const q = query.trim().toLowerCase();
+  const rank = new Map(recentIds.map((id, i) => [id, i]));
+  const recency = (f: SavedFood) => rank.get(f.id) ?? Infinity;
+  return list
+    .filter((f) => matches(f, q))
+    .sort(
+      (a, b) =>
+        Number(b.favorite) - Number(a.favorite) ||
+        (order === 'recent' ? recency(a) - recency(b) || b.lastUsedAt - a.lastUsedAt : 0) ||
+        a.name.localeCompare(b.name),
+    );
+}
+
+/** The "+ Log meal" picker: favorites, then recently logged, then everything else (A–Z). */
+export function pickerSections(list: SavedFood[], query: string, recentIds: string[], recentLimit = 8) {
+  const q = query.trim().toLowerCase();
+  const found = list.filter((f) => matches(f, q));
+  const byId = new Map(found.map((f) => [f.id, f]));
+  const favorites = found.filter((f) => f.favorite).sort((a, b) => a.name.localeCompare(b.name));
+  const recent = recentIds
+    .map((id) => byId.get(id))
+    .filter((f): f is SavedFood => !!f && !f.favorite)
+    .slice(0, recentLimit);
+  const shown = new Set([...favorites, ...recent].map((f) => f.id));
+  const rest = found.filter((f) => !shown.has(f.id)).sort((a, b) => a.name.localeCompare(b.name));
+  return { favorites, recent, rest };
+}
+
+/**
+ * Which library question "Add to today" asks:
+ * changed = a library food was picked and its name or a nutrition value was edited;
+ * save = typed in by hand (with a name); none = picked and unchanged, or nothing to save.
+ */
+export function libraryPrompt(values: FoodInput, picked: SavedFood | null): 'changed' | 'save' | 'none' {
+  if (picked) {
+    const same =
+      values.name.trim() === picked.name &&
+      values.kcal === picked.kcal &&
+      values.protein === picked.protein &&
+      values.fat === picked.fat &&
+      values.carbs === picked.carbs;
+    return same ? 'none' : 'changed';
+  }
+  return values.name.trim() ? 'save' : 'none';
 }
