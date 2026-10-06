@@ -1,5 +1,13 @@
 # Gymplan
 
+The code for this project was mainly AI generated using Claude Code, however the architecture and design was thought of and created by myself. I made this project because I wanted a gym tracker app that was simple but still allowed me to both track my workout metrics and to track my diet. In fact this app is hosted on https://gymplan-eight-xi.vercel.app/, however the Firebase database is configured to block new users. 
+
+Some decisions I made:
+- It is built to locally cache the data in case it cannot connect to the server, since gym wifi is often finicky.
+- To limit the daily writes, only 1 log is done per set in a workout, there is 1 write per diet entry, updates the workout plan every 0.6s when editing it, weigh in goes in a 'day document'
+Below is the AI summery of the project. 
+
+
 A personal, offline-first PWA for logging workouts, diet and bodyweight — built for one user, running entirely on Firebase's free **Spark** plan.
 
 - **iPhone:** log workouts at the gym (works with no signal, syncs later).
@@ -49,17 +57,7 @@ In development a small **R · W counter** (bottom right) shows approximately how
    and put your project id in `.firebaserc` (`"default": "your-project-id"`).
 6. **Log in the CLI:** `firebase login`
 
-`.env` is git-ignored (the values aren't secret, but they stay out of the repo). Never commit service-account keys — the app doesn't need any.
-
-### Lock the app to your account
-
-1. Deploy once (next section) and open the app. Tap **First time? Create account** and sign up.
-2. Firebase console → *Authentication* → *Users* → copy your **User UID**.
-3. In `firestore.rules`, replace `REPLACE_WITH_YOUR_UID` with it. (`dev-owner` is the emulator account; it can't be created by sign-up in production, so it's harmless to leave.)
-4. **Turn off new sign-ups:** Authentication → *Settings* → *User actions* → untick **Enable create (sign-up)** → Save.
-5. `firebase deploy --only firestore:rules`
-
-Now only your uid can read or write `users/<uid>/**`; everything else is denied, even if someone manages to create an account. The deploy refuses to push rules that still contain the placeholder.
+`.env` is git-ignored (the values aren't secret, but they stay out of the repo). Never commit service-account keys — the app doesn't need any
 
 ---
 
